@@ -705,7 +705,12 @@ export function agentInstructionsService(db?: Db) {
     adapterConfig: Record<string, unknown>;
   }> {
     const dbBundle = readDbBundle(agent);
-    if (dbBundle && relativePath !== LEGACY_PROMPT_TEMPLATE_PATH) {
+    if (dbBundle) {
+      // DB-backed bundles are the source of truth and have no legacy promptTemplate pseudo-file;
+      // reject it here so writeFile matches deleteFile's behaviour and the invariant holds.
+      if (relativePath === LEGACY_PROMPT_TEMPLATE_PATH) {
+        throw unprocessable("Cannot edit the legacy promptTemplate pseudo-file on a DB-backed bundle");
+      }
       const normalizedPath = normalizeRelativeFilePath(relativePath);
       const files = dbBundle.files.filter((file) => file.path !== normalizedPath);
       files.push({ path: normalizedPath, content });

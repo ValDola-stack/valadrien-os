@@ -7229,6 +7229,14 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         : typeof resolvedConfig.instructionsFilePath === "string" && resolvedConfig.instructionsFilePath
           ? path.dirname(resolvedConfig.instructionsFilePath)
           : null;
+    if ((agent.instructionBundle?.files?.length ?? 0) > 0 && !instructionsRootForBundle) {
+      // The DB bundle is the source of truth but the adapter config has no path to materialize
+      // it to — the executor would read nothing. Surface it loudly instead of silently no-op'ing.
+      logger.error(
+        { agentId: agent.id, runId: run.id },
+        "agent has a DB instruction bundle but adapter config has no instructionsRootPath/instructionsFilePath; instructions will NOT be materialized for this run",
+      );
+    }
     await materializeInstructionBundleToDisk(agent.instructionBundle ?? null, instructionsRootForBundle);
     if (secretManifest.length > 0) {
       context.valadrienOsSecrets = {
