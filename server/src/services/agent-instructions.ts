@@ -473,9 +473,30 @@ export async function materializeInstructionBundleToDisk(
 ): Promise<void> {
   if (!bundle || !Array.isArray(bundle.files) || bundle.files.length === 0 || !rootPath) return;
   await fs.mkdir(rootPath, { recursive: true });
+  const wanted = new Set(
+    bundle.files
+      .filter((file) => file && typeof file.path === "string")
+      .map((file) => normalizeRelativeFilePath(file.path)),
+  );
+  // Remove stale on-disk files no longer in the DB bundle so disk mirrors the source of truth.
+  for (const existing of await listFilesRecursive(rootPath)) {
+    if (wanted.has(existing)) continue;
+    try {
+      await fs.rm(resolvePathWithinRoot(rootPath, existing), { force: true });
+    } catch {
+      // ignore (best-effort cleanup; a bad/escaping path is skipped rather than fatal)
+    }
+  }
   for (const file of bundle.files) {
     if (!file || typeof file.path !== "string" || typeof file.content !== "string") continue;
-    const absolutePath = resolvePathWithinRoot(rootPath, file.path);
+    let absolutePath: string;
+    try {
+      // resolvePathWithinRoot throws on any path escaping rootPath (traversal guard); skip such a
+      // file instead of aborting the whole run. Bundles are trusted, but defense-in-depth is cheap.
+      absolutePath = resolvePathWithinRoot(rootPath, file.path);
+    } catch {
+      continue;
+    }
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, file.content, "utf8");
   }
