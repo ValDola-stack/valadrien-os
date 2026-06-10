@@ -13,7 +13,7 @@ import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
 import { CircleDot } from "lucide-react";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@valadrien-os/shared";
 
 const WORKSPACE_FILTER_ISSUE_LIMIT = 1000;
 const ISSUES_PAGE_SIZE = 500;
@@ -179,7 +179,11 @@ export function Issues() {
   }
 
   return (
-    <IssuesList
+    <div className="space-y-4">
+      <div>
+        <h1 className="font-serif text-2xl font-medium tracking-tight">Issues</h1>
+      </div>
+      <IssuesList
       issues={issues ?? []}
       isLoading={isLoading}
       isLoadingMoreIssues={isFetchingNextPage}
@@ -187,7 +191,7 @@ export function Issues() {
       agents={agents}
       projects={projects}
       liveIssueIds={liveIssueIds}
-      viewStateKey="paperclip:issues-view"
+      viewStateKey="valadrien-os:issues-view"
       issueLinkState={issueLinkState}
       initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
       initialWorkspaces={initialWorkspaces.length > 0 ? initialWorkspaces : undefined}
@@ -198,6 +202,7 @@ export function Issues() {
       onLoadMoreIssues={loadMoreServerIssues}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
       searchFilters={participantAgentId || workspaceIdFilter ? { participantAgentId, workspaceId: workspaceIdFilter } : undefined}
-    />
+      />
+    </div>
   );
 }

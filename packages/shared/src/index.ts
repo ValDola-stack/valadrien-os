@@ -1,6 +1,12 @@
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
 export {
   COMPANY_STATUSES,
+  COMPANY_INFRA_MODES,
+  INFRA_CAPABILITIES,
+  INFRA_ENTITLEMENT_MODES,
+  INFRA_ENTITLEMENT_STATUSES,
+  DEFAULT_MANAGED_INFRA_ENTITLEMENTS,
+  MANAGED_INFRA_CAPABILITY_PROVIDERS,
   DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
   DEPLOYMENT_MODES,
@@ -11,6 +17,8 @@ export {
   AGENT_ADAPTER_TYPES,
   AGENT_ROLES,
   AGENT_ROLE_LABELS,
+  FOUNDING_AGENT_ROLES,
+  isFoundingAgentRole,
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   WORKSPACE_BRANCH_ROUTINE_VARIABLE,
   MODEL_PROFILE_KEYS,
@@ -131,6 +139,10 @@ export {
   PLUGIN_EVENT_TYPES,
   PLUGIN_BRIDGE_ERROR_CODES,
   type CompanyStatus,
+  type CompanyInfraMode,
+  type InfraCapability,
+  type InfraEntitlementMode,
+  type InfraEntitlementStatus,
   type DeploymentMode,
   type DeploymentExposure,
   type BindMode,
@@ -138,6 +150,7 @@ export {
   type AgentStatus,
   type AgentAdapterType,
   type AgentRole,
+  type FoundingAgentRole,
   type ModelProfileKey,
   type AgentIconName,
   type IssueStatus,
@@ -260,6 +273,7 @@ export {
 
 export type {
   Company,
+  CompanyInfraEntitlement,
   Environment,
   EnvironmentLease,
   EnvironmentProbeResult,
@@ -627,7 +641,7 @@ export type {
   PluginDatabaseDeclaration,
   PluginApiRouteCompanyResolution,
   PluginApiRouteDeclaration,
-  PaperclipPluginManifestV1,
+  ValadrienOsPluginManifestV1,
   PluginRecord,
   PluginDatabaseNamespaceRecord,
   PluginMigrationRecord,
@@ -1108,7 +1122,7 @@ export {
 } from "./routine-variables.js";
 
 export {
-  paperclipConfigSchema,
+  valadrienOsConfigSchema,
   configMetaSchema,
   llmConfigSchema,
   databaseBackupConfigSchema,
@@ -1123,7 +1137,7 @@ export {
   secretsLocalEncryptedConfigSchema,
   telemetryConfigSchema,
   type TelemetryConfig,
-  type PaperclipConfig,
+  type ValadrienOsConfig,
   type LlmConfig,
   type DatabaseBackupConfig,
   type DatabaseConfig,

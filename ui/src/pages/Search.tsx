@@ -7,7 +7,7 @@ import {
   type CompanySearchResponse,
   type CompanySearchResult,
   type CompanySearchScope,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import { loadRecentSearches, pushRecentSearch } from "../lib/recent-searches";
 import { PageTabBar, type PageTabItem } from "../components/PageTabBar";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { SearchResultRow } from "../components/search/SearchResultRow";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@valadrien-os/shared";
 
 const SEARCH_DEBOUNCE_MS = 250;
 const IDENTIFIER_PATTERN = /^[A-Z]+-\d+$/;
@@ -450,14 +450,14 @@ function SearchTabContent({
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10 sm:px-6">
         <div>
-          <h2 className="text-lg font-semibold">Type to search company memory.</h2>
+          <h2 className="font-serif text-xl font-medium">Type to search company memory.</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Issues, comments, plan documents, agents, projects — same surface, ranked by relevance.
           </p>
         </div>
         {recentSearches.length > 0 ? (
           <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="mb-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               Recent searches
             </div>
             <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -499,7 +499,7 @@ function SearchTabContent({
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-3 px-4 py-12 text-center">
         <AlertTriangle className="h-10 w-10 text-destructive" aria-hidden />
-        <div className="text-base font-semibold">Couldn’t run that search</div>
+        <div className="font-serif text-lg font-medium tracking-tight">Couldn’t run that search</div>
         <p className="text-sm text-muted-foreground">
           {status ? `The server returned ${status}.` : "The request failed."} Your input and filters are still here, so
           you can retry or fall back to the Issues filter.
@@ -544,7 +544,7 @@ function SearchTabContent({
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-3 px-4 py-12 text-center">
         <FileQuestion className="h-10 w-10 text-muted-foreground" aria-hidden />
-        <div className="text-base font-semibold">No results for &ldquo;{trimmedQuery}&rdquo;</div>
+        <div className="font-serif text-lg font-medium tracking-tight">No results for &ldquo;{trimmedQuery}&rdquo;</div>
         <p className="text-sm text-muted-foreground">
           We couldn’t find a match in {describeScope(scope).toLowerCase()}. Try widening the scope or rephrasing your
           query.
@@ -578,7 +578,7 @@ function SearchTabContent({
 
   return (
     <div className="flex w-full max-w-[960px] flex-col px-2 sm:px-4" data-testid="search-results">
-      <div className="flex items-center justify-between py-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center justify-between py-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
         <span>
           {totalResults === 1 ? "1 result" : `${totalResults} results`} · sorted by relevance
         </span>

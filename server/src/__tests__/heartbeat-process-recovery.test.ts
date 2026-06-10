@@ -26,7 +26,7 @@ import {
   issueTreeHolds,
   issueWorkProducts,
   issues,
-} from "@paperclipai/db";
+} from "@valadrien-os/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -50,9 +50,9 @@ vi.mock("../telemetry.ts", () => ({
   getTelemetryClient: () => mockTelemetryClient,
 }));
 
-vi.mock("@paperclipai/shared/telemetry", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/shared/telemetry")>(
-    "@paperclipai/shared/telemetry",
+vi.mock("@valadrien-os/shared/telemetry", async () => {
+  const actual = await vi.importActual<typeof import("@valadrien-os/shared/telemetry")>(
+    "@valadrien-os/shared/telemetry",
   );
   return {
     ...actual,
@@ -262,7 +262,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
   const cleanupPids = new Set<number>();
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-recovery-");
+    tempDb = await startEmbeddedPostgresTestDatabase("valadrien-os-heartbeat-recovery-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -417,7 +417,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -549,7 +549,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -665,7 +665,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -831,7 +831,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -973,6 +973,25 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       .then((rows) => rows[0] ?? null);
     expect(issue?.executionRunId).toBe(retryRun?.id ?? null);
     expect(issue?.checkoutRunId).toBe(runId);
+  });
+
+  it("does NOT reap a run that emitted output recently, even if the recorded pid is dead", async () => {
+    const { runId } = await seedRunFixture({ processPid: 999_999_999, includeIssue: false });
+    // Simulate an actively-producing run: the tracked pid is dead (a detached launcher),
+    // but output was emitted just now — which proves the run is still alive. The reaper must
+    // not false-positive a `process_lost` here.
+    await db
+      .update(heartbeatRuns)
+      .set({ lastOutputAt: new Date() })
+      .where(eq(heartbeatRuns.id, runId));
+
+    const heartbeat = heartbeatService(db);
+    const result = await heartbeat.reapOrphanedRuns();
+    expect(result.reaped).toBe(0);
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.status).toBe("running");
+    expect(run?.errorCode ?? null).not.toBe("process_lost");
   });
 
   it("releases active environment leases when an orphaned run is reaped", async () => {
@@ -2199,7 +2218,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2326,7 +2345,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });

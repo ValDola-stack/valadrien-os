@@ -27,12 +27,14 @@ import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
-import { redactCommandText as redactCommandSecretText } from "@paperclipai/adapter-utils";
+import { redactCommandText as redactCommandSecretText } from "@valadrien-os/adapter-utils";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { getUIAdapter, buildTranscript, onAdapterChange } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
-import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
+import { AgentPortrait } from "../components/AgentPortrait";
+import { agentStatusDot, agentStatusDotDefault, agentLiveState } from "../lib/status-colors";
+import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
@@ -46,6 +48,11 @@ import { SourceResolvedFoldCallout } from "../components/SourceResolvedFoldCallo
 import { SourceResolvedFoldBadge } from "../components/SourceResolvedFoldBadge";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
+import {
+  isLiveSocketDisabled,
+  markLiveSocketAvailable,
+  markLiveSocketUnavailable,
+} from "../lib/live-socket-availability";
 import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { describeRunRetryState } from "../lib/runRetryState";
@@ -83,9 +90,10 @@ import {
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
+import { AgentIconPicker } from "../components/AgentIconPicker";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
+  isFoundingAgentRole,
   isUuidLike,
   type Agent,
   type AgentInstructionsBundle,
@@ -99,8 +107,8 @@ import {
   type AgentRuntimeState,
   type LiveEvent,
   type WorkspaceOperation,
-} from "@paperclipai/shared";
-import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
+} from "@valadrien-os/shared";
+import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@valadrien-os/adapter-utils";
 import { agentRouteRef } from "../lib/utils";
 import {
   applyAgentSkillSnapshot,
@@ -137,13 +145,13 @@ function duplicateInstructionFilePath(
 }
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
-  succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
-  failed: { icon: XCircle, color: "text-red-600 dark:text-red-400" },
-  running: { icon: Loader2, color: "text-cyan-600 dark:text-cyan-400" },
-  queued: { icon: Clock, color: "text-yellow-600 dark:text-yellow-400" },
-  scheduled_retry: { icon: Clock, color: "text-sky-600 dark:text-sky-400" },
-  timed_out: { icon: Timer, color: "text-orange-600 dark:text-orange-400" },
-  cancelled: { icon: Slash, color: "text-neutral-500 dark:text-neutral-400" },
+  succeeded: { icon: CheckCircle2, color: "text-status-success" },
+  failed: { icon: XCircle, color: "text-status-error" },
+  running: { icon: Loader2, color: "text-status-running" },
+  queued: { icon: Clock, color: "text-status-warning" },
+  scheduled_retry: { icon: Clock, color: "text-status-info" },
+  timed_out: { icon: Timer, color: "text-status-warning" },
+  cancelled: { icon: Slash, color: "text-muted-foreground" },
 };
 
 const RUN_LOG_PAGE_BYTES = 256_000;
@@ -151,7 +159,7 @@ const RUN_LOG_PAGE_BYTES = 256_000;
 const REDACTED_ENV_VALUE = "***REDACTED***";
 const SECRET_ENV_KEY_RE =
   /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
-const COMMAND_ENV_KEY_RE = /(^command$|^cmd$|command[-_]?line|resolved[-_]?command|PAPERCLIP_RESOLVED_COMMAND)/i;
+const COMMAND_ENV_KEY_RE = /(^command$|^cmd$|command[-_]?line|resolved[-_]?command|VALADRIEN_OS_RESOLVED_COMMAND)/i;
 const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
 
 function redactPathText(value: string, censorUsernameInLogs: boolean) {
@@ -337,6 +345,10 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function getAdapterModel(agent: { adapterConfig?: Record<string, unknown> | null }): string | null {
+  return asNonEmptyString(agent.adapterConfig?.model);
+}
+
 export function RunInvocationCard({
   payload,
   censorUsernameInLogs,
@@ -468,13 +480,13 @@ function workspaceOperationPhaseLabel(phase: WorkspaceOperation["phase"]) {
 function workspaceOperationStatusTone(status: WorkspaceOperation["status"]) {
   switch (status) {
     case "succeeded":
-      return "border-green-500/20 bg-green-500/10 text-green-700 dark:text-green-300";
+      return "border-status-success/20 bg-status-success/10 text-status-success";
     case "failed":
-      return "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300";
+      return "border-status-error/20 bg-status-error/10 text-status-error";
     case "running":
-      return "border-cyan-500/20 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300";
+      return "border-status-running/20 bg-status-running/10 text-status-running";
     case "skipped":
-      return "border-yellow-500/20 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300";
+      return "border-status-warning/20 bg-status-warning/10 text-status-warning";
     default:
       return "border-border bg-muted/40 text-muted-foreground";
   }
@@ -544,9 +556,9 @@ function WorkspaceOperationLogViewer({
                     className={cn(
                       "shrink-0 w-14",
                       chunk.stream === "stderr"
-                        ? "text-red-600 dark:text-red-300"
+                        ? "text-status-error"
                         : chunk.stream === "system"
-                          ? "text-blue-600 dark:text-blue-300"
+                          ? "text-status-info"
                           : "text-muted-foreground",
                     )}
                   >
@@ -632,8 +644,8 @@ function WorkspaceOperationsSection({
               )}
               {operation.stderrExcerpt && operation.stderrExcerpt.trim() && (
                 <div>
-                  <div className="mb-1 text-xs text-red-700 dark:text-red-300">stderr excerpt</div>
-                  <pre className="rounded-md bg-red-50 p-2 text-xs whitespace-pre-wrap break-all text-red-800 dark:bg-neutral-950 dark:text-red-100">
+                  <div className="mb-1 text-xs text-status-error">stderr excerpt</div>
+                  <pre className="rounded-md bg-status-error/10 p-2 text-xs whitespace-pre-wrap break-all text-status-error">
                     {redactPathText(operation.stderrExcerpt, censorUsernameInLogs)}
                   </pre>
                 </div>
@@ -1005,20 +1017,31 @@ export function AgentDetail() {
     <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3.5 min-w-0">
           <AgentIconPicker
             value={agent.icon}
             onChange={(icon) => updateIcon.mutate(icon)}
           >
-            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
-              <AgentIcon icon={agent.icon} className="h-6 w-6" />
+            <button className="shrink-0 transition-opacity hover:opacity-80" title="Change icon">
+              <AgentPortrait
+                src={null}
+                name={agent.name}
+                state={agentLiveState(agent.status)}
+                size={48}
+              />
             </button>
           </AgentIconPicker>
           <div className="min-w-0">
-            <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
-            <p className="text-sm text-muted-foreground truncate">
-              {roleLabels[agent.role] ?? agent.role}
-              {agent.title ? ` - ${agent.title}` : ""}
+            <div className="flex items-center gap-2.5">
+              <h2 className="font-serif text-2xl font-medium tracking-tight truncate">{agent.name}</h2>
+              <span className="hidden sm:inline shrink-0"><StatusBadge status={agent.status} /></span>
+            </div>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono tabular-nums text-xs text-muted-foreground truncate">
+              <span>{getAdapterModel(agent) ?? getAdapterLabel(agent.adapterType)}</span>
+              <span className="text-muted-foreground/40">·</span>
+              <span>{roleLabels[agent.role] ?? agent.role}{agent.title ? ` — ${agent.title}` : ""}</span>
+              <span className="text-muted-foreground/40">·</span>
+              <span>{agent.lastHeartbeatAt ? `ran ${relativeTime(agent.lastHeartbeatAt)}` : "never run"}</span>
             </p>
           </div>
         </div>
@@ -1042,17 +1065,16 @@ export function AgentDetail() {
             onResume={() => agentAction.mutate("resume")}
             disabled={agentAction.isPending || isPendingApproval}
           />
-          <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
           {mobileLiveRun && (
             <Link
               to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
-              className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
+              className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-status-running/10 hover:bg-status-running/20 transition-colors no-underline"
             >
               <span className="relative flex h-2 w-2">
-                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-status-running opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-status-running" />
               </span>
-              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
+              <span className="text-[11px] font-medium text-status-running">Live</span>
             </Link>
           )}
 
@@ -1133,7 +1155,7 @@ export function AgentDetail() {
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
       {isPendingApproval && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/30 dark:text-amber-200">
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-status-warning/40 bg-status-warning/12 px-3 py-2 text-sm text-status-warning">
           <span>This agent is pending board approval and cannot be invoked yet.</span>
           <Button
             variant="outline"
@@ -1150,7 +1172,7 @@ export function AgentDetail() {
       {/* Floating Save/Cancel (desktop) */}
       {!isMobile && showConfigActionBar && (
         <div className="fixed bottom-6 right-6 z-30">
-          <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg">
+          <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5">
             <Button
               variant="ghost"
               size="sm"
@@ -1286,7 +1308,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
   const liveRun = sorted.find((r) => r.status === "running" || r.status === "queued");
   const run = liveRun ?? sorted[0];
   const isLive = run.status === "running" || run.status === "queued";
-  const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
+  const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-muted-foreground" };
   const StatusIcon = statusInfo.icon;
   const summaryRaw = run.resultJson
     ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
@@ -1313,11 +1335,11 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
   return (
     <div className="space-y-3">
       <div className="flex w-full items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
+        <h3 className="flex items-center gap-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
           {isLive && (
             <span className="relative flex h-2 w-2">
-              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+              <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-status-running opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-status-running" />
             </span>
           )}
           {isLive ? "Live Run" : "Latest Run"}
@@ -1334,7 +1356,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
         to={`/agents/${agentId}/runs/${run.id}`}
         className={cn(
           "block border rounded-lg p-4 space-y-2 w-full no-underline transition-colors hover:bg-muted/50 cursor-pointer",
-          isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
+          isLive ? "border-status-running/30" : "border-border"
         )}
       >
         <div className="flex items-center gap-2">
@@ -1404,7 +1426,7 @@ function AgentOverview({
       {/* Recent Issues */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Recent Issues</h3>
+          <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Recent Issues</h3>
           <Link
             to={`/issues?participantAgentId=${agentId}`}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -1436,7 +1458,7 @@ function AgentOverview({
 
       {/* Costs */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Costs</h3>
+        <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Costs</h3>
         <CostsSection runtimeState={runtimeState} runs={runs} />
       </div>
     </div>
@@ -1706,10 +1728,10 @@ function ConfigurationTab({
   const canCreateAgents = Boolean(agent.permissions?.canCreateAgents);
   const canAssignTasks = Boolean(agent.access?.canAssignTasks);
   const taskAssignSource = agent.access?.taskAssignSource ?? "none";
-  const taskAssignLocked = agent.role === "ceo" || canCreateAgents;
+  const taskAssignLocked = isFoundingAgentRole(agent.role) || canCreateAgents;
   const taskAssignHint =
     taskAssignSource === "ceo_role"
-      ? "Enabled automatically for CEO agents."
+      ? "Enabled automatically for founding agents (CEO, Chief of Staff, CTO)."
       : taskAssignSource === "agent_creator"
         ? "Enabled automatically while this agent can create new agents."
         : taskAssignSource === "explicit_grant"
@@ -2127,7 +2149,7 @@ function PromptsTab({
       {(bundle?.warnings ?? []).length > 0 && (
         <div className="space-y-2">
           {(bundle?.warnings ?? []).map((warning) => (
-            <div key={warning} className="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+            <div key={warning} className="rounded-md border border-status-warning/25 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
               {warning}
             </div>
           ))}
@@ -2150,7 +2172,7 @@ function PromptsTab({
                       <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={4}>
-                      Managed: Paperclip stores and serves the instructions bundle. External: you provide a path on disk where the instructions live.
+                      Managed: ValadrienOs stores and serves the instructions bundle. External: you provide a path on disk where the instructions live.
                     </TooltipContent>
                   </Tooltip>
                 </span>
@@ -2205,7 +2227,7 @@ function PromptsTab({
                       <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={4}>
-                      The absolute directory on disk where the instructions bundle lives. In managed mode this is set by Paperclip automatically.
+                      The absolute directory on disk where the instructions bundle lives. In managed mode this is set by ValadrienOs automatically.
                     </TooltipContent>
                   </Tooltip>
                 </span>
@@ -2403,7 +2425,7 @@ function PromptsTab({
                 return (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="ml-3 shrink-0 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide cursor-help">
+                      <span className="ml-3 shrink-0 rounded border border-status-warning/40 bg-status-warning/10 text-status-warning px-1.5 py-0.5 text-[10px] uppercase tracking-wide cursor-help">
                         virtual file
                       </span>
                     </TooltipTrigger>
@@ -2763,12 +2785,12 @@ export function AgentSkillsTab({
       typeof agent.adapterConfig.agent === "string" &&
       agent.adapterConfig.agent === "custom"
     ) {
-      return "Paperclip cannot manage skills for custom ACP commands yet.";
+      return "ValadrienOs cannot manage skills for custom ACP commands yet.";
     }
     if (agent.adapterType === "openclaw_gateway") {
-      return "Paperclip cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
+      return "ValadrienOs cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
     }
-    return "Paperclip cannot manage skills for this adapter yet. Manage them in the adapter directly.";
+    return "ValadrienOs cannot manage skills for this adapter yet. Manage them in the adapter directly.";
   }, [agent.adapterConfig.agent, agent.adapterType, skillSnapshot?.mode]);
   const hasUnsavedChanges = !arraysEqual(skillDraft, lastSavedSkills);
   const saveStatusLabel = syncSkills.isPending
@@ -2795,7 +2817,7 @@ export function AgentSkillsTab({
       </div>
 
       {skillSnapshot?.warnings.length ? (
-        <div className="space-y-1 rounded-xl border border-amber-300/60 bg-amber-50/60 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200">
+        <div className="space-y-1 rounded-xl border border-status-warning/30 bg-status-warning/12 px-4 py-3 text-sm text-status-warning">
           {skillSnapshot.warnings.map((warning) => (
             <div key={warning}>{warning}</div>
           ))}
@@ -2926,7 +2948,7 @@ export function AgentSkillsTab({
                   <section className="border-y border-border">
                     <div className="border-b border-border bg-muted/40 px-3 py-2">
                       <span className="text-xs font-medium text-muted-foreground">
-                        Required by Paperclip
+                        Required by ValadrienOs
                       </span>
                     </div>
                     {requiredSkillRows.map(renderSkillRow)}
@@ -2943,7 +2965,7 @@ export function AgentSkillsTab({
                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUnmanagedOpen((v) => !v); } }}
                     >
                       <span className="text-xs font-medium text-muted-foreground">
-                        ({unmanagedSkillRows.length}) User-installed skills, not managed by Paperclip
+                        ({unmanagedSkillRows.length}) User-installed skills, not managed by ValadrienOs
                       </span>
                       {unmanagedOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                     </div>
@@ -2955,7 +2977,7 @@ export function AgentSkillsTab({
           })()}
 
           {desiredOnlyMissingSkills.length > 0 && (
-            <div className="rounded-xl border border-amber-300/60 bg-amber-50/60 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200">
+            <div className="rounded-xl border border-status-warning/30 bg-status-warning/12 px-4 py-3 text-sm text-status-warning">
               <div className="font-medium">Requested skills missing from the company library</div>
               <div className="mt-1 text-xs">
                 {desiredOnlyMissingSkills.join(", ")}
@@ -2994,7 +3016,7 @@ export function AgentSkillsTab({
 /* ---- Runs Tab ---- */
 
 function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelected: boolean; agentId: string }) {
-  const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
+  const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-muted-foreground" };
   const StatusIcon = statusInfo.icon;
   const metrics = runMetrics(run);
   const summary = run.resultJson
@@ -3374,7 +3396,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
             )}
             {run.error && (
               <div className="text-xs">
-                <span className="text-red-600 dark:text-red-400">{run.error}</span>
+                <span className="text-status-error">{run.error}</span>
                 {run.errorCode && <span className="text-muted-foreground ml-1">({run.errorCode})</span>}
               </div>
             )}
@@ -3417,7 +3439,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                       </pre>
                     )}
                     {!!claudeLoginResult.stderr && (
-                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">
+                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-status-error overflow-x-auto whitespace-pre-wrap">
                         {claudeLoginResult.stderr}
                       </pre>
                     )}
@@ -3426,7 +3448,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
               </div>
             )}
             {hasNonZeroExit && (
-              <div className="text-xs text-red-600 dark:text-red-400">
+              <div className="text-xs text-status-error">
                 Exit code {run.exitCode}
                 {run.signal && <span className="text-muted-foreground ml-1">(signal: {run.signal})</span>}
               </div>
@@ -3489,7 +3511,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
             >
               <ChevronRight className={cn("h-3 w-3 transition-transform", sessionOpen && "rotate-90")} />
               Session
-              {sessionChanged && <span className="text-yellow-400 ml-1">(changed)</span>}
+              {sessionChanged && <span className="text-status-warning ml-1">(changed)</span>}
             </button>
             {sessionOpen && (
               <div className="px-4 pb-3 space-y-1 text-xs">
@@ -3564,8 +3586,8 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
       {/* stderr excerpt for failed runs */}
       {run.stderrExcerpt && (
         <div className="space-y-1">
-          <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <span className="text-xs font-medium text-status-error">stderr</span>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-status-error overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
         </div>
       )}
 
@@ -3854,13 +3876,25 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   // Stream live updates from websocket (primary path for running runs).
   useEffect(() => {
     if (!isLive) return;
+    // Socket already found unusable this session (serverless) — skip it; run/agent data
+    // still refreshes via react-query (LiveUpdatesProvider polls those queries). Prevents
+    // re-storming /events/ws when this view remounts.
+    if (isLiveSocketDisabled()) return;
 
     let closed = false;
     let reconnectTimer: number | null = null;
+    let reconnectAttempt = 0;
     let socket: WebSocket | null = null;
 
     const scheduleReconnect = () => {
       if (closed) return;
+      reconnectAttempt += 1;
+      // Can't establish the socket here — flag it session-wide and stop retrying it
+      // (run/agent data still refreshes via react-query polling).
+      if (reconnectAttempt > 3) {
+        markLiveSocketUnavailable();
+        return;
+      }
       reconnectTimer = window.setTimeout(connect, 1500);
     };
 
@@ -3872,6 +3906,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       socket = new WebSocket(url);
 
       socket.onopen = () => {
+        reconnectAttempt = 0;
+        markLiveSocketAvailable();
         setIsStreamingConnected(true);
       };
 
@@ -4004,14 +4040,14 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
   const levelColors: Record<string, string> = {
     info: "text-foreground",
-    warn: "text-yellow-600 dark:text-yellow-400",
-    error: "text-red-600 dark:text-red-400",
+    warn: "text-status-warning",
+    error: "text-status-error",
   };
 
   const streamColors: Record<string, string> = {
     stdout: "text-foreground",
-    stderr: "text-red-600 dark:text-red-300",
-    system: "text-blue-600 dark:text-blue-300",
+    stderr: "text-status-error",
+    system: "text-status-info",
   };
 
   return (
@@ -4037,7 +4073,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                 className={cn(
                   "rounded-md px-2.5 py-1 text-[11px] font-medium capitalize transition-colors",
                   transcriptMode === mode
-                    ? "bg-accent text-foreground shadow-sm"
+                    ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
                 onClick={() => setTranscriptMode(mode)}
@@ -4062,10 +4098,10 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             </Button>
           )}
           {isLive && (
-            <span className="flex items-center gap-1 text-xs text-cyan-400">
+            <span className="flex items-center gap-1 text-xs text-status-running">
               <span className="relative flex h-2 w-2">
-                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-status-running opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-status-running" />
               </span>
               Live
             </span>
@@ -4099,7 +4135,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           </div>
         )}
         {logError && (
-          <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-xs text-red-700 dark:text-red-300">
+          <div className="mt-3 rounded-xl border border-status-error/20 bg-status-error/[0.06] px-3 py-2 text-xs text-status-error">
             {logError}
           </div>
         )}
@@ -4107,34 +4143,34 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       </div>
 
       {(run.status === "failed" || run.status === "timed_out") && (
-        <div className="rounded-lg border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-950/20 p-3 space-y-2">
-          <div className="text-xs font-medium text-red-700 dark:text-red-300">Failure details</div>
+        <div className="rounded-lg border border-status-error/30 bg-status-error/10 p-3 space-y-2">
+          <div className="text-xs font-medium text-status-error">Failure details</div>
           {run.error && (
-            <div className="text-xs text-red-600 dark:text-red-200">
-              <span className="text-red-700 dark:text-red-300">Error: </span>
+            <div className="text-xs text-status-error">
+              <span className="text-status-error">Error: </span>
               {redactPathText(run.error, censorUsernameInLogs)}
             </div>
           )}
           {run.stderrExcerpt && run.stderrExcerpt.trim() && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">stderr excerpt</div>
-              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
+              <div className="text-xs text-status-error mb-1">stderr excerpt</div>
+              <pre className="bg-status-error/10 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-status-error">
                 {redactPathText(run.stderrExcerpt, censorUsernameInLogs)}
               </pre>
             </div>
           )}
           {run.resultJson && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">adapter result JSON</div>
-              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
+              <div className="text-xs text-status-error mb-1">adapter result JSON</div>
+              <pre className="bg-status-error/10 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-status-error">
                 {JSON.stringify(redactPathValue(run.resultJson, censorUsernameInLogs), null, 2)}
               </pre>
             </div>
           )}
           {run.stdoutExcerpt && run.stdoutExcerpt.trim() && !run.resultJson && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">stdout excerpt</div>
-              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
+              <div className="text-xs text-status-error mb-1">stdout excerpt</div>
+              <pre className="bg-status-error/10 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-status-error">
                 {redactPathText(run.stdoutExcerpt, censorUsernameInLogs)}
               </pre>
             </div>
@@ -4154,10 +4190,10 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
               return (
                 <div key={evt.id} className="flex gap-2">
-                  <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
+                  <span className="text-muted-foreground shrink-0 select-none w-16">
                     {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
                   </span>
-                  <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
+                  <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-muted-foreground") : "text-muted-foreground")}>
                     {evt.stream ? `[${evt.stream}]` : ""}
                   </span>
                   <span className={cn("break-all", color)}>
@@ -4222,8 +4258,8 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
     <div className="space-y-6">
       {/* New token banner */}
       {newToken && (
-        <div className="border border-yellow-300 dark:border-yellow-600/40 bg-yellow-50 dark:bg-yellow-500/5 rounded-lg p-4 space-y-2">
-          <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
+        <div className="border border-status-warning/40 bg-status-warning/10 rounded-lg p-4 space-y-2">
+          <p className="text-sm font-medium text-status-warning">
             API key created — copy it now, it will not be shown again.
           </p>
           <div className="flex items-center gap-2">
@@ -4246,7 +4282,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
             >
               <Copy className="h-3.5 w-3.5" />
             </Button>
-            {copied && <span className="text-xs text-green-400">Copied!</span>}
+            {copied && <span className="text-xs text-status-success">Copied!</span>}
           </div>
           <Button
             variant="ghost"
@@ -4266,7 +4302,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
           Create API Key
         </h3>
         <p className="text-xs text-muted-foreground">
-          API keys allow this agent to authenticate calls to the Paperclip server.
+          API keys allow this agent to authenticate calls to the ValadrienOs server.
         </p>
         <div className="flex items-center gap-2">
           <Input

@@ -6,7 +6,7 @@ import type {
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
   CompanyPortabilityAdapterOverride,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
@@ -34,7 +34,7 @@ import { Field, adapterLabels } from "../components/agent-config-primitives";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
-import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import type { CreateConfigValues } from "@valadrien-os/adapter-utils";
 import {
   type FileTreeNode,
   type FrontmatterData,
@@ -104,10 +104,10 @@ function ensureMarkdownPath(p: string): string {
 }
 
 const ACTION_COLORS: Record<string, string> = {
-  create: "text-emerald-500 border-emerald-500/30",
-  update: "text-amber-500 border-amber-500/30",
-  overwrite: "text-red-500 border-red-500/30",
-  replace: "text-red-500 border-red-500/30",
+  create: "text-status-success border-status-success/30",
+  update: "text-status-warning border-status-warning/30",
+  overwrite: "text-status-error border-status-error/30",
+  replace: "text-status-error border-status-error/30",
   skip: "text-muted-foreground border-border",
   none: "text-muted-foreground border-border",
 };
@@ -163,7 +163,7 @@ function renderImportFileExtra(node: FileTreeNode, checked: boolean, renameMap: 
   return (
     <span className="inline-flex items-center gap-1.5 shrink-0">
       {renamedTo && checked && (
-        <span className="text-[10px] text-cyan-500 font-mono truncate max-w-[7rem]" title={renamedTo}>
+        <span className="text-[10px] text-status-info font-mono truncate max-w-[7rem]" title={renamedTo}>
           &rarr; {renamedTo}
         </span>
       )}
@@ -222,7 +222,7 @@ function ImportPreviewPane({
           <div className="min-w-0 flex items-center gap-2">
             <span className="truncate font-mono text-sm">{selectedFile}</span>
             {renamedTo && (
-              <span className="shrink-0 font-mono text-sm text-cyan-500">
+              <span className="shrink-0 font-mono text-sm text-status-info">
                 &rarr; {renamedTo}
               </span>
             )}
@@ -410,10 +410,10 @@ function ConflictResolutionList({
     <div className="mx-5 mt-3">
       <div className="rounded-md border border-border">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <h3 className="text-sm font-medium">
+          <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             Renames
           </h3>
-          <span className="text-xs text-muted-foreground">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
             {conflicts.length} item{conflicts.length === 1 ? "" : "s"}
           </span>
         </div>
@@ -428,7 +428,7 @@ function ConflictResolutionList({
                 className={cn(
                   "flex items-center gap-3 px-4 py-2.5 text-sm",
                   isSkipped && "opacity-40",
-                  isConfirmed && !isSkipped && "bg-emerald-500/5",
+                  isConfirmed && !isSkipped && "bg-status-success/5",
                 )}
               >
                 {/* Skip button on the left */}
@@ -450,8 +450,8 @@ function ConflictResolutionList({
                   isSkipped
                     ? "text-muted-foreground border-border"
                     : isConfirmed
-                      ? "text-emerald-500 border-emerald-500/30"
-                      : "text-amber-500 border-amber-500/30",
+                      ? "text-status-success border-status-success/30"
+                      : "text-status-warning border-status-warning/30",
                 )}>
                   {item.kind}
                 </span>
@@ -467,7 +467,7 @@ function ConflictResolutionList({
                   <>
                     <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
                     {isConfirmed ? (
-                      <span className="min-w-0 flex-1 font-mono text-xs text-emerald-500">
+                      <span className="min-w-0 flex-1 font-mono text-xs text-status-success">
                         {currentName}
                       </span>
                     ) : (
@@ -487,7 +487,7 @@ function ConflictResolutionList({
                     className={cn(
                       "ml-auto shrink-0 rounded-md border px-2.5 py-1 text-xs transition-colors inline-flex items-center gap-1.5",
                       isConfirmed
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                        ? "border-status-success/30 bg-status-success/10 text-status-success"
                         : "border-border text-muted-foreground hover:bg-accent/50",
                     )}
                     onClick={() => onToggleConfirm(item.slug)}
@@ -549,8 +549,8 @@ function AdapterPickerList({
     <div className="mx-5 mt-3">
       <div className="rounded-md border border-border">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <h3 className="text-sm font-medium">Adapters</h3>
-          <span className="text-xs text-muted-foreground">
+          <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Adapters</h3>
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
             {agents.length} agent{agents.length === 1 ? "" : "s"}
           </span>
         </div>
@@ -565,7 +565,7 @@ function AdapterPickerList({
                 <div className="flex items-center gap-3 px-4 py-2.5 text-sm">
                   <span className={cn(
                     "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
-                    "text-blue-500 border-blue-500/30",
+                    "text-status-info border-status-info/30",
                   )}>
                     agent
                   </span>
@@ -704,7 +704,7 @@ export function CompanyImport() {
   }, [companyAgents]);
 
   const localZipHelpText =
-    "Upload a .zip exported directly from Paperclip. Re-zipped archives created by Finder, Explorer, or other zip tools may not import correctly.";
+    "Upload a .zip exported directly from ValadrienOs. Re-zipped archives created by Finder, Explorer, or other zip tools may not import correctly.";
 
   useEffect(() => {
     setBreadcrumbs([
@@ -1094,9 +1094,9 @@ export function CompanyImport() {
       {/* Source form section */}
       <div className="border-b border-border px-5 py-5 space-y-4">
         <div>
-          <h2 className="text-base font-semibold">Import source</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            Choose a GitHub repo or upload a local Paperclip zip package.
+          <h1 className="font-serif text-2xl font-medium tracking-tight">Import company</h1>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Choose a GitHub repo or upload a local ValadrienOs zip package.
           </p>
         </div>
 
@@ -1245,20 +1245,22 @@ export function CompanyImport() {
           {/* Sticky import action bar */}
           <div className="sticky top-0 z-10 border-b border-border bg-background px-5 py-3">
             <div className="flex flex-wrap items-center gap-4 text-sm">
-              <span className="font-medium">
+              <span className="font-serif text-base font-medium tracking-tight">
                 Import preview
               </span>
-              <span className="text-muted-foreground">
+              <span className="font-mono text-muted-foreground tabular-nums">
                 {selectedCount} / {totalFiles} file{totalFiles === 1 ? "" : "s"} selected
               </span>
               {conflicts.length > 0 && (
-                <span className="text-amber-500">
-                  {conflicts.length} conflict{conflicts.length === 1 ? "" : "s"}
+                <span className="inline-flex items-center gap-1.5 text-status-warning">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-warning" />
+                  <span className="font-mono tabular-nums">{conflicts.length}</span> conflict{conflicts.length === 1 ? "" : "s"}
                 </span>
               )}
               {importPreview.errors.length > 0 && (
-                <span className="text-destructive">
-                  {importPreview.errors.length} error{importPreview.errors.length === 1 ? "" : "s"}
+                <span className="inline-flex items-center gap-1.5 text-destructive">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-status-error" />
+                  <span className="font-mono tabular-nums">{importPreview.errors.length}</span> error{importPreview.errors.length === 1 ? "" : "s"}
                 </span>
               )}
             </div>
@@ -1302,9 +1304,9 @@ export function CompanyImport() {
 
           {/* Warnings */}
           {importPreview.warnings.length > 0 && (
-            <div className="mx-5 mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <div className="mx-5 mt-3 rounded-md border border-status-warning/30 bg-status-warning/5 px-4 py-3">
               {importPreview.warnings.map((w) => (
-                <div key={w} className="text-xs text-amber-500">{w}</div>
+                <div key={w} className="text-xs text-status-warning">{w}</div>
               ))}
             </div>
           )}
@@ -1322,7 +1324,7 @@ export function CompanyImport() {
           <div className="grid gap-4 xl:h-[calc(100vh-16rem)] xl:grid-cols-[19rem_minmax(0,1fr)] xl:gap-0">
             <aside className="flex max-h-[24rem] flex-col overflow-hidden border-b border-border xl:max-h-none xl:border-b-0 xl:border-r">
               <div className="border-b border-border px-4 py-3 shrink-0">
-                <h2 className="text-base font-semibold">Package files</h2>
+                <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Package files</h2>
               </div>
               <div className="flex-1 overflow-y-auto">
                 <FileTree

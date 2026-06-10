@@ -4,7 +4,7 @@ import { act } from "react";
 import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@valadrien-os/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyJoinRequest } from "../api/access";
 
@@ -453,21 +453,21 @@ describe("InboxIssueMetaLeading", () => {
       root.render(<InboxIssueMetaLeading issue={createIssue()} isLive />);
     });
 
-    const statusIcon = container.querySelector('span[class*="border-blue-600"]');
-    const liveBadge = container.querySelector('span[class*="px-1.5"][class*="bg-blue-500/10"]');
+    const statusIcon = container.querySelector('span[class*="border-status-info"]');
+    const liveBadge = container.querySelector('span[class*="px-1.5"][class*="bg-status-running/12"]');
     const liveBadgeLabel = Array.from(container.querySelectorAll("span")).find(
       (node) => node.textContent === "Live" && node.className.includes("text-"),
     );
-    const liveDot = container.querySelector('span[class*="bg-blue-500"]');
+    const liveDot = container.querySelector('span[class*="bg-status-running"]');
     const pulseRing = container.querySelector('span[class*="animate-pulse"]');
 
     expect(statusIcon).not.toBeNull();
     expect(statusIcon?.className).not.toContain("!border-muted-foreground");
     expect(statusIcon?.className).not.toContain("!text-muted-foreground");
     expect(liveBadge).not.toBeNull();
-    expect(liveBadge?.className).toContain("bg-blue-500/10");
+    expect(liveBadge?.className).toContain("bg-status-running/12");
     expect(liveBadgeLabel).not.toBeNull();
-    expect(liveBadgeLabel?.className).toContain("text-blue-600");
+    expect(liveBadgeLabel?.className).toContain("text-status-running");
     expect(liveDot).not.toBeNull();
     expect(pulseRing).not.toBeNull();
 

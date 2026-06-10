@@ -1,19 +1,32 @@
 <p align="center">
-  <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/assets/brand/valadrien-wordmark-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="doc/assets/brand/valadrien-wordmark-light.svg" />
+    <img src="doc/assets/brand/valadrien-wordmark-light.svg" alt="ValAdrien OS — runs your business" width="520" />
+  </picture>
 </p>
 
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
-  <a href="https://paperclip.ing/docs"><strong>Docs</strong></a> &middot;
-  <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
-  <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a> &middot;
-  <a href="https://x.com/papercliping"><strong>Twitter</strong></a>
+  <a href="https://TODO_DOMAIN/docs"><strong>Docs</strong></a> &middot;
+  <a href="https://github.com/ValDola-stack/valadrien-os"><strong>GitHub</strong></a> &middot;
+  <a href="https://TODO_DISCORD"><strong>Discord</strong></a> &middot;
+  <a href="https://x.com/TODO_TWITTER"><strong>Twitter</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/paperclipai/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
-  <a href="https://github.com/paperclipai/paperclip/stargazers"><img src="https://img.shields.io/github/stars/paperclipai/paperclip?style=flat" alt="Stars" /></a>
-  <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
+  <a href="https://github.com/ValDola-stack/valadrien-os/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="https://github.com/ValDola-stack/valadrien-os/stargazers"><img src="https://img.shields.io/github/stars/ValDola-stack/valadrien-os?style=flat" alt="Stars" /></a>
+  <a href="https://TODO_DISCORD"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
+  <a href="https://github.com/ValDola-stack/valadrien-os/network/dependencies"><img src="https://img.shields.io/badge/fork%20of-paperclipai%2Fpaperclip-7c3aed" alt="Fork of paperclipai/paperclip" /></a>
+</p>
+
+<p align="center">
+  <sub>
+    <strong>ValAdrien OS</strong> is a maintained fork of <a href="https://github.com/paperclipai/paperclip">paperclipai/paperclip</a>,
+    rebranded under <a href="https://valadrien.dev">ValAdrien.DEV</a>. See
+    <a href="#about-this-fork">About this fork</a> for what changed and how upstream sync works.
+  </sub>
 </p>
 
 <br/>
@@ -24,13 +37,13 @@
 
 <br/>
 
-## What is Paperclip?
+## What is ValAdrien OS?
 
 # Open-source orchestration for zero-human companies
 
-**If OpenClaw is an _employee_, Paperclip is the _company_**
+**If OpenClaw is an _employee_, ValAdrien OS is the _company_**
 
-Paperclip is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
+ValAdrien OS is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
 
 It looks like a task manager — but under the hood it has org charts, budgets, governance, goal alignment, and agent coordination.
 
@@ -44,7 +57,7 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 
 <br/>
 
-> **COMING SOON: Clipmart** — Download and run entire companies with one click. Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your Paperclip instance in seconds.
+> **COMING SOON: Clipmart** — Download and run entire companies with one click. Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your ValAdrien OS instance in seconds.
 
 <br/>
 
@@ -67,7 +80,7 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 
 <br/>
 
-## Paperclip is right for you if
+## ValAdrien OS is right for you if
 
 - ✅ You want to build **autonomous AI companies**
 - ✅ You **coordinate many different agents** (OpenClaw, Codex, Claude, Cursor) toward a common goal
@@ -128,28 +141,28 @@ Monitor and manage your autonomous businesses from anywhere.
 
 <br/>
 
-## Problems Paperclip solves
+## Problems ValAdrien OS solves
 
-| Without Paperclip                                                                                                                     | With Paperclip                                                                                                                         |
+| Without ValAdrien OS                                                                                                                     | With ValAdrien OS                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | ❌ You have 20 Claude Code tabs open and can't track which one does what. On reboot you lose everything.                              | ✅ Tasks are ticket-based, conversations are threaded, sessions persist across reboots.                                                |
 | ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Context flows from the task up through the project and company goals — your agent always knows what to do and why.                  |
-| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
+| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ ValAdrien OS gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
 | ❌ Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.                           | ✅ Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.                    |
 | ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Heartbeats handle regular work on a schedule. Management supervises.                                                                |
-| ❌ You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.                                | ✅ Add a task in Paperclip. Your coding agent works on it until it's done. Management reviews their work.                              |
+| ❌ You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.                                | ✅ Add a task in ValAdrien OS. Your coding agent works on it until it's done. Management reviews their work.                              |
 
 <br/>
 
-## Why Paperclip is special
+## Why ValAdrien OS is special
 
-Paperclip handles the hard orchestration details correctly.
+ValAdrien OS handles the hard orchestration details correctly.
 
 |                                   |                                                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Atomic execution.**             | Task checkout and budget enforcement are atomic, so no double-work and no runaway spend.                      |
 | **Persistent agent state.**       | Agents resume the same task context across heartbeats instead of restarting from scratch.                     |
-| **Runtime skill injection.**      | Agents can learn Paperclip workflows and project context at runtime, without retraining.                      |
+| **Runtime skill injection.**      | Agents can learn ValAdrien OS workflows and project context at runtime, without retraining.                      |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
 | **Goal-aware execution.**         | Tasks carry full goal ancestry so agents consistently see the "why," not just a title.                        |
 | **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
@@ -159,11 +172,11 @@ Paperclip handles the hard orchestration details correctly.
 
 ## What's Under the Hood
 
-Paperclip is a full control plane, not a wrapper. Before you build any of this yourself, know that it already exists:
+ValAdrien OS is a full control plane, not a wrapper. Before you build any of this yourself, know that it already exists:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                       PAPERCLIP SERVER                       │
+│                       VALADRIEN OS SERVER                       │
 │                                                              │
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
 │  │Identity & │  │  Work &   │  │ Heartbeat │  │Governance │  │
@@ -241,7 +254,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 <tr>
 <td>
 
-**Plugins** — Instance-wide plugin system with out-of-process workers, capability-gated host services, job scheduling, tool exposure, and UI contributions. Extend Paperclip without forking it.
+**Plugins** — Instance-wide plugin system with out-of-process workers, capability-gated host services, job scheduling, tool exposure, and UI contributions. Extend ValAdrien OS without forking it.
 
 </td>
 <td>
@@ -266,42 +279,154 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 
 <br/>
 
-## What Paperclip is not
+## What ValAdrien OS is not
 
 |                              |                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **Not a chatbot.**           | Agents have jobs, not chat windows.                                                                                  |
 | **Not an agent framework.**  | We don't tell you how to build agents. We tell you how to run a company made of them.                                |
-| **Not a workflow builder.**  | No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.            |
-| **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.               |
-| **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need Paperclip. If you have twenty — you definitely do. |
-| **Not a code review tool.**  | Paperclip orchestrates work, not pull requests. Bring your own review process.                                       |
+| **Not a workflow builder.**  | No drag-and-drop pipelines. ValAdrien OS models companies — with org charts, goals, budgets, and governance.            |
+| **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. ValAdrien OS manages the organization they work in.               |
+| **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need ValAdrien OS. If you have twenty — you definitely do. |
+| **Not a code review tool.**  | ValAdrien OS orchestrates work, not pull requests. Bring your own review process.                                       |
+
+<br/>
+
+<a id="about-this-fork"></a>
+
+## About this fork
+
+ValAdrien OS is a maintained fork of [paperclipai/paperclip](https://github.com/paperclipai/paperclip),
+rebranded and operated under the **ValAdrien.DEV** brand. We track upstream and pull
+improvements forward, while keeping the product surface, naming, and packaging
+under the `ValDola-stack` org.
+
+### Origin & attribution
+
+| Attribute             | Value                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| **Upstream**          | [paperclipai/paperclip](https://github.com/paperclipai/paperclip) (default branch: `master`)       |
+| **This fork**         | [ValDola-stack/valadrien-os](https://github.com/ValDola-stack/valadrien-os)                        |
+| **Brand owner**       | [ValAdrien.DEV](https://valadrien.dev)                                                             |
+| **License**           | MIT (preserved from upstream, see [LICENSE](LICENSE))                                              |
+| **Rebrand branch**    | `rebrand/valadrien-os`                                                                             |
+| **Active maintainer** | `ValDola-stack` org                                                                                |
+
+Upstream copyright and credits are preserved. ValAdrien OS would not exist
+without the original work by the Paperclip authors — thank you.
+
+### Why fork
+
+1. **Independent brand & release cadence.** ValAdrien OS ships as part of the
+   ValAdrien.DEV product family with its own roadmap, telemetry domain, and
+   support channels.
+2. **Scope rename across the workspace.** All npm package names moved from
+   `@paperclipai/*` to `@valadrien-os/*` so the published surface is unambiguous
+   for downstream consumers.
+3. **Future OpenClaw integration.** A planned deeper integration with the
+   OpenClaw agent (see [ROADMAP.md](ROADMAP.md)) is easier to land in a fork we
+   control end-to-end.
+
+### What changed vs upstream
+
+- **Product name & branding** — `Paperclip` / `PaperclipAI` → **`ValAdrien OS`**
+  across docs, UI strings, CLI banners, and config keys (e.g.
+  `VALADRIEN_OS_TELEMETRY_DISABLED`).
+- **npm scope** — `@paperclipai/*` → **`@valadrien-os/*`** across all 24
+  workspace packages.
+- **CLI binary** — published as `valadrien-os` (`npx valadrien-os onboard --yes`).
+- **Repository identity** — `paperclipai/paperclip` → `ValDola-stack/valadrien-os`
+  in every git/manifest/badge reference.
+- **Brand assets** — new VA wordmark and mark SVGs under
+  [`doc/assets/brand/`](doc/assets/brand/), light + dark variants.
+- **Release pipeline** — `@valadrien-os/*` packages are currently
+  **un-enrolled from CI publishing** pending the npm-scope bootstrap decision.
+  See [PRD.md](PRD.md) §7 and [Architecture.md](Architecture.md) §9.
+
+### What is the same
+
+- **Core architecture, data model, and APIs** are unchanged. See
+  [Architecture.md](Architecture.md) for the full breakdown.
+- **All upstream features** — agents, org charts, heartbeats, tasks, budgets,
+  approvals, plugins, routines, companies-portability — work identically.
+- **MIT license** and contribution model.
+
+### Upstream sync model
+
+The fork ships with the upstream repo configured as a read-only `upstream`
+remote so it is easy to pull future Paperclip improvements forward without
+accidentally pushing fork-only commits back:
+
+```bash
+git remote -v
+# origin    git@github.com:ValDola-stack/valadrien-os.git (fetch)
+# origin    git@github.com:ValDola-stack/valadrien-os.git (push)
+# upstream  https://github.com/paperclipai/paperclip.git  (fetch)
+# upstream  no_push                                       (push)
+```
+
+To pull in upstream changes:
+
+```bash
+git fetch upstream
+git checkout -b sync/upstream-$(date +%Y%m%d) origin/master
+git merge upstream/master       # resolve conflicts in renamed paths
+pnpm install                    # regenerate the @valadrien-os/* lockfile
+pnpm typecheck && pnpm test
+```
+
+Open a PR against `master` and run the standard policy/verify gates. Conflict
+hotspots are predictable: `package.json` names, README/badge URLs, CLI banner
+strings, and `doc/` references — anything touched by the rebrand pass.
+
+### Current status
+
+- ✅ Full rebrand pass landed on `rebrand/valadrien-os`.
+- ✅ Brand SVG assets (wordmark + mark, light/dark) in
+  [`doc/assets/brand/`](doc/assets/brand/).
+- ✅ Upstream remote wired with `no_push`.
+- ✅ All PR CI checks green on the rebrand PR — `policy`, `Build`,
+  `Typecheck + Release Registry`, the four serialized server suites,
+  three general-test groups, `e2e`, and `verify`. The post-rebrand
+  failures in `plugin-database`, the founding-role copy assertions, the
+  onboarding/planning-mode Playwright specs, and the signoff e2e suite
+  are all fixed; see commit `2b28b3e0` and
+  [`doc/plans/2026-05-29-canonicalize-run-id-header.md`](doc/plans/2026-05-29-canonicalize-run-id-header.md)
+  for the run-id-header follow-up.
+- ⚪ npm publishing for `@valadrien-os/*` is **deferred** — packages are valid
+  workspace targets but `publishFromCi: false` until the scope is bootstrapped
+  on npm. Re-enable per-package after the first publish lands.
+- ⚪ Brand-owner-controlled placeholders (`TODO_DOMAIN`, `TODO_DISCORD`,
+  `TODO_TWITTER`) are intentionally left as tokens — replace at brand launch.
+
+For the full requirements view, see [PRD.md](PRD.md). For the architectural
+breakdown of what was forked, see [Architecture.md](Architecture.md).
 
 <br/>
 
 ## Quickstart
 
-Open source. Self-hosted. No Paperclip account required.
+Open source. Self-hosted. No ValAdrien OS account required.
 
 ```bash
-npx paperclipai onboard --yes
+npx valadrien-os onboard --yes
 ```
 
 That quickstart path now defaults to trusted local loopback mode for the fastest first run. To start in authenticated/private mode instead, choose a bind preset explicitly:
 
 ```bash
-npx paperclipai onboard --yes --bind lan
+npx valadrien-os onboard --yes --bind lan
 # or:
-npx paperclipai onboard --yes --bind tailnet
+npx valadrien-os onboard --yes --bind tailnet
 ```
 
-If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Use `paperclipai configure` to edit settings.
+If you already have ValAdrien OS configured, rerunning `onboard` keeps the existing config in place. Use `valadrien-os configure` to edit settings.
 
 Or manually:
 
 ```bash
-git clone https://github.com/paperclipai/paperclip.git
-cd paperclip
+git clone https://github.com/ValDola-stack/valadrien-os.git
+cd valadrien-os
 pnpm install
 pnpm dev
 ```
@@ -317,21 +442,21 @@ This starts the API server at `http://localhost:3100`. An embedded PostgreSQL da
 **What does a typical setup look like?**
 Locally, a single Node.js process manages an embedded Postgres and local file storage. For production, point it at your own Postgres and deploy however you like. Configure projects, agents, and goals — the agents take care of the rest.
 
-If you're a solo-entreprenuer you can use Tailscale to access Paperclip on the go. Then later you can deploy to e.g. Vercel when you need it.
+If you're a solo entrepreneur you can use Tailscale to access ValAdrien OS on the go. Then later you can deploy to e.g. Vercel when you need it.
 
 **Can I run multiple companies?**
 Yes. A single deployment can run an unlimited number of companies with complete data isolation.
 
-**How is Paperclip different from agents like OpenClaw or Claude Code?**
-Paperclip _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
+**How is ValAdrien OS different from agents like OpenClaw or Claude Code?**
+ValAdrien OS _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
 
-**Why should I use Paperclip instead of just pointing my OpenClaw to Asana or Trello?**
-Agent orchestration has subtleties in how you coordinate who has work checked out, how to maintain sessions, monitoring costs, establishing governance - Paperclip does this for you.
+**Why should I use ValAdrien OS instead of just pointing my OpenClaw to Asana or Trello?**
+Agent orchestration has subtleties in how you coordinate who has work checked out, how to maintain sessions, monitoring costs, establishing governance - ValAdrien OS does this for you.
 
 (Bring-your-own-ticket-system is on the Roadmap)
 
 **Do agents run continuously?**
-By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw. You bring your agent and Paperclip coordinates.
+By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw. You bring your agent and ValAdrien OS coordinates.
 
 <br/>
 
@@ -386,20 +511,20 @@ This is the short roadmap preview. See the full roadmap in [ROADMAP.md](ROADMAP.
 
 ## Community & Plugins
 
-Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-paperclip)
+Find Plugins and more at [awesome-valadrien-os](https://github.com/gsxdsm/awesome-valadrien-os)
 
 ## Telemetry
 
-Paperclip collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
+ValAdrien OS collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
 
 Telemetry is **enabled by default** and can be disabled with any of the following:
 
 | Method               | How                                                     |
 | -------------------- | ------------------------------------------------------- |
-| Environment variable | `PAPERCLIP_TELEMETRY_DISABLED=1`                        |
+| Environment variable | `VALADRIEN_OS_TELEMETRY_DISABLED=1`                        |
 | Standard convention  | `DO_NOT_TRACK=1`                                        |
 | CI environments      | Automatically disabled when `CI=true`                   |
-| Config file          | Set `telemetry.enabled: false` in your Paperclip config |
+| Config file          | Set `telemetry.enabled: false` in your ValAdrien OS config |
 
 ## Contributing
 
@@ -409,20 +534,20 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deta
 
 ## Community
 
-- [Discord](https://discord.gg/m4HZY7xNG3) — Join the community
-- [Twitter / X](https://x.com/papercliping) — Follow updates and announcements
-- [GitHub Issues](https://github.com/paperclipai/paperclip/issues) — bugs and feature requests
-- [GitHub Discussions](https://github.com/paperclipai/paperclip/discussions) — ideas and RFC
+- [Discord](https://TODO_DISCORD) — Join the community
+- [Twitter / X](https://x.com/TODO_TWITTER) — Follow updates and announcements
+- [GitHub Issues](https://github.com/ValDola-stack/valadrien-os/issues) — bugs and feature requests
+- [GitHub Discussions](https://github.com/ValDola-stack/valadrien-os/discussions) — ideas and RFC
 
 <br/>
 
 ## License
 
-MIT &copy; 2026 Paperclip
+MIT &copy; 2026 ValAdrien OS
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=paperclipai/paperclip&type=date&legend=top-left)](https://www.star-history.com/?repos=paperclipai%2Fpaperclip&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/image?repos=ValDola-stack/valadrien-os&type=date&legend=top-left)](https://www.star-history.com/#ValDola-stack/valadrien-os&Date)
 
 <br/>
 

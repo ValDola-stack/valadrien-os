@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { LiveEvent } from "@paperclipai/shared";
+import type { LiveEvent } from "@valadrien-os/shared";
 import { ApiError } from "../../api/client";
 import { instanceSettingsApi } from "../../api/instanceSettings";
 import { heartbeatsApi } from "../../api/heartbeats";
 import { buildTranscript, getUIAdapter, onAdapterChange, type RunLogChunk, type TranscriptEntry } from "../../adapters";
 import { queryKeys } from "../../lib/queryKeys";
 import { buildSameOriginWebSocketUrl } from "../../lib/websocket-url";
+import {
+  isLiveSocketDisabled,
+  markLiveSocketAvailable,
+  markLiveSocketUnavailable,
+} from "../../lib/live-socket-availability";
 
 const LOG_POLL_INTERVAL_MS = 2000;
 const LOG_READ_LIMIT_BYTES = 256_000;
+// The live-log socket is an optimization on top of the readRunLog fetch-poll above.
+// Where it can't connect (serverless control plane), stop retrying after a few attempts
+// instead of reconnecting every 1.5s forever — the 2s log poll keeps the transcript live.
+const MAX_TRANSCRIPT_WS_ATTEMPTS = 3;
 const EMPTY_RUN_LOG_CHUNKS: RunLogChunk[] = [];
 
 export interface RunTranscriptSource {
@@ -268,13 +277,26 @@ export function useLiveRunTranscripts({
   useEffect(() => {
     if (!enableRealtimeUpdates) return;
     if (!companyId || activeRunIds.size === 0) return;
+    // The socket was already found unusable this session (e.g. serverless) — skip it;
+    // the readRunLog fetch-poll above keeps the transcript live. Prevents this hook
+    // (which remounts on every live-runs poll) from re-storming /events/ws.
+    if (isLiveSocketDisabled()) return;
 
     let closed = false;
     let reconnectTimer: number | null = null;
+    let reconnectAttempt = 0;
     let socket: WebSocket | null = null;
 
     const scheduleReconnect = () => {
       if (closed) return;
+      reconnectAttempt += 1;
+      // Can't establish the socket here — flag it session-wide (so this hook's remounts
+      // and other live hooks skip it) and stop; the readRunLog fetch-poll keeps the
+      // transcript updating.
+      if (reconnectAttempt > MAX_TRANSCRIPT_WS_ATTEMPTS) {
+        markLiveSocketUnavailable();
+        return;
+      }
       reconnectTimer = window.setTimeout(connect, 1500);
     };
 
@@ -284,6 +306,11 @@ export function useLiveRunTranscripts({
         `/api/companies/${encodeURIComponent(companyId)}/events/ws`,
       );
       socket = new WebSocket(url);
+
+      socket.onopen = () => {
+        reconnectAttempt = 0;
+        markLiveSocketAvailable();
+      };
 
       socket.onmessage = (message) => {
         const raw = typeof message.data === "string" ? message.data : "";

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "outputDirectory": "public",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run build:vercel",
+  "fluid": true,
+  "regions": ["pdx1"],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    {
+      "source": "/((?!api/)(?!assets/)(?!.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ],
+  "crons": [
+    { "path": "/api/health", "schedule": "*/3 * * * *" }
+  ],
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 300,
+      "memory": 3008,
+      "excludeFiles": "{ui/**,.claude/**,.agents/**,packages/**/src/**,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,ui/storybook/**,packages/**/tests/**}"
+    }
+  }
+}

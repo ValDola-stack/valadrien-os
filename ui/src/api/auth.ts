@@ -4,7 +4,7 @@ import {
   type AuthSession,
   type CurrentUserProfile,
   type UpdateCurrentUserProfile,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 
 type AuthErrorBody =
   | {
@@ -111,6 +111,21 @@ export const authApi = {
 
   signUpEmail: async (input: { name: string; email: string; password: string }) => {
     await authPost("/sign-up/email", input);
+  },
+
+  // Starts a social OAuth flow (e.g. Google). Better Auth returns a provider
+  // authorization URL; we send the browser there. After consent the provider
+  // redirects back to /api/auth/callback/<provider>, which lands the user on
+  // callbackURL with an active session.
+  signInSocial: async (input: { provider: "google"; callbackURL: string }) => {
+    const payload = (await authPost("/sign-in/social", input)) as
+      | { url?: string; redirect?: boolean }
+      | null;
+    if (payload?.url) {
+      window.location.href = payload.url;
+      return;
+    }
+    throw new Error("Social sign-in did not return a redirect URL");
   },
 
   getProfile: async (): Promise<CurrentUserProfile> => {

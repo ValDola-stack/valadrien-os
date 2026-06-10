@@ -10,11 +10,11 @@ import { test, expect } from "@playwright/test";
  *   Step 4 — Ready to launch (summary + open issue)
  *
  * By default this runs in skip_llm mode: we do NOT assert that an LLM
- * heartbeat fires. Set PAPERCLIP_E2E_SKIP_LLM=false to enable LLM-dependent
+ * heartbeat fires. Set VALADRIEN_OS_E2E_SKIP_LLM=false to enable LLM-dependent
  * assertions (requires a valid ANTHROPIC_API_KEY).
  */
 
-const SKIP_LLM = process.env.PAPERCLIP_E2E_SKIP_LLM !== "false";
+const SKIP_LLM = process.env.VALADRIEN_OS_E2E_SKIP_LLM !== "false";
 
 const COMPANY_NAME = `E2E-Test-${Date.now()}`;
 const AGENT_NAME = "CEO";
@@ -30,6 +30,11 @@ test.describe("Onboarding wizard", () => {
 
     const companyNameInput = page.locator('input[placeholder="Acme Corp"]');
     await companyNameInput.fill(COMPANY_NAME);
+
+    const companyGoalInput = page.locator(
+      'textarea[placeholder="What is this company trying to achieve?"]'
+    );
+    await companyGoalInput.fill("Ship the test suite.");
 
     const nextButton = page.getByRole("button", { name: "Next" });
     await nextButton.click();
@@ -155,7 +160,7 @@ test.describe("Onboarding wizard", () => {
     expect(task.description).toContain(
       "You are the CEO. You set the direction for the company."
     );
-    expect(task.description).not.toContain("github.com/paperclipai/companies");
+    expect(task.description).not.toContain("github.com/valadrien-os/companies");
 
     if (!SKIP_LLM) {
       await expect(async () => {

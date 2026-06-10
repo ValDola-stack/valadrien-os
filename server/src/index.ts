@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
-import type { Request as ExpressRequest, RequestHandler } from "express";
+import type { Express, Request as ExpressRequest, RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -23,7 +23,7 @@ import {
   companies,
   companyMemberships,
   instanceUserRoles,
-} from "@paperclipai/db";
+} from "@valadrien-os/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -83,23 +83,81 @@ type EmbeddedPostgresCtor = new (opts: {
 
 export interface StartedServer {
   server: ReturnType<typeof createServer>;
+  app: Express;
   host: string;
   listenPort: number;
   apiUrl: string;
   databaseUrl: string;
 }
 
+/**
+ * Bound a cold-start step so a hanging dependency can't pin a serverless cold boot to
+ * the function's max duration (we observed a 300s hang → 504). On timeout OR error it
+ * logs and CONTINUES — the control plane starts (degraded) rather than wedging. Used
+ * only on serverless; the persistent worker awaits these fully.
+ */
+async function boundColdStartStep(label: string, ms: number, run: () => Promise<unknown>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timed = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      logger.warn(
+        { coldStartStep: label, timeoutMs: ms },
+        `cold-start step '${label}' exceeded ${ms}ms — continuing (runs again next boot / on the worker)`,
+      );
+      resolve();
+    }, ms);
+  });
+  try {
+    await Promise.race([
+      Promise.resolve()
+        .then(run)
+        .then(() => undefined)
+        .catch((err) => {
+          logger.warn({ coldStartStep: label, err }, `cold-start step '${label}' failed — continuing`);
+        }),
+      timed,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function startServer(): Promise<StartedServer> {
+  // --- cold-start boot timing -------------------------------------------------
+  // One-shot per process: startServer runs exactly once per (cold) instance, so
+  // these marks fire once and partition the cold start into named segments.
+  // Read them in the Vercel function runtime logs after a cold hit to find which
+  // phase owns the ~7s serverless cold start. Gated to Vercel (or an explicit
+  // flag) so the always-on Railway worker emits no extra log noise.
+  const __bootTimingEnabled =
+    !!process.env.VERCEL || process.env.VALADRIEN_OS_BOOT_TIMING === "true";
+  const __bootStart = performance.now();
+  let __bootLast = __bootStart;
+  const bootMark = (phase: string): void => {
+    if (!__bootTimingEnabled) return;
+    const now = performance.now();
+    const phaseMs = Math.round(now - __bootLast);
+    const sinceStartMs = Math.round(now - __bootStart);
+    // console.log (not logger.info): the prod pino level filters out info, which
+    // silently dropped these marks on the first measurement pass. console.log is
+    // captured by Vercel regardless of log level, matching the module-import mark.
+    console.log(
+      `boot-timing: ${phase} (+${phaseMs}ms, ${sinceStartMs}ms total) ` +
+        JSON.stringify({ bootPhase: phase, phaseMs, sinceStartMs }),
+    );
+    __bootLast = now;
+  };
+
   let config = loadConfig();
   initTelemetry({ enabled: config.telemetryEnabled });
-  if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
-    process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
+  if (process.env.VALADRIEN_OS_SECRETS_PROVIDER === undefined) {
+    process.env.VALADRIEN_OS_SECRETS_PROVIDER = config.secretsProvider;
   }
-  if (process.env.PAPERCLIP_SECRETS_STRICT_MODE === undefined) {
-    process.env.PAPERCLIP_SECRETS_STRICT_MODE = config.secretsStrictMode ? "true" : "false";
+  if (process.env.VALADRIEN_OS_SECRETS_STRICT_MODE === undefined) {
+    process.env.VALADRIEN_OS_SECRETS_STRICT_MODE = config.secretsStrictMode ? "true" : "false";
   }
-  if (process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE === undefined) {
-    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
+  if (process.env.VALADRIEN_OS_SECRETS_MASTER_KEY_FILE === undefined) {
+    process.env.VALADRIEN_OS_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
   }
   
   type MigrationSummary =
@@ -116,8 +174,8 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
-    if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
-    if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
+    if (process.env.VALADRIEN_OS_MIGRATION_AUTO_APPLY === "true") return true;
+    if (process.env.VALADRIEN_OS_MIGRATION_PROMPT === "never") return false;
     if (!stdin.isTTY || !stdout.isTTY) return true;
   
     const prompt = createInterface({ input: stdin, output: stdout });
@@ -163,7 +221,7 @@ export async function startServer(): Promise<StartedServer> {
       if (!apply) {
         throw new Error(
           `${label} has pending migrations (${formatPendingMigrationSummary(state.pendingMigrations)}). ` +
-            "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
+            "Refusing to start against a stale schema. Run pnpm db:migrate or set VALADRIEN_OS_MIGRATION_AUTO_APPLY=true.",
         );
       }
   
@@ -176,7 +234,7 @@ export async function startServer(): Promise<StartedServer> {
     if (!apply) {
       throw new Error(
         `${label} has pending migrations (${formatPendingMigrationSummary(state.pendingMigrations)}). ` +
-          "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
+          "Refusing to start against a stale schema. Run pnpm db:migrate or set VALADRIEN_OS_MIGRATION_AUTO_APPLY=true.",
       );
     }
   
@@ -229,7 +287,7 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   const LOCAL_BOARD_USER_ID = "local-board";
-  const LOCAL_BOARD_USER_EMAIL = "local@paperclip.local";
+  const LOCAL_BOARD_USER_EMAIL = "local@valadrien-os.local";
   const LOCAL_BOARD_USER_NAME = "Board";
   
   async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
@@ -300,14 +358,38 @@ export async function startServer(): Promise<StartedServer> {
     | { mode: "embedded-postgres"; dataDir: string; port: number };
   assertCloudDatabaseContract();
   if (config.databaseUrl) {
+    // The serverless control plane (Vercel) must NOT run/inspect migrations or open a
+    // second pool to the migration URL (Supabase SESSION pooler, :5432). Every cold start
+    // would otherwise burn scarce session-pooler clients (EMAXCONNSESSION) and add boot
+    // latency. Migrations are owned by the persistent worker; skip here and use a single
+    // pool against the (transaction-pooler) runtime URL.
+    const runMigrations = !process.env.VERCEL;
     const migrationUrl = config.databaseMigrationUrl ?? config.databaseUrl;
-    migrationSummary = await ensureMigrations(migrationUrl, "PostgreSQL");
-  
+    if (runMigrations) {
+      migrationSummary = await ensureMigrations(migrationUrl, "PostgreSQL");
+    } else {
+      migrationSummary = "skipped";
+    }
+
     db = createDb(config.databaseUrl);
-    pluginMigrationDb = config.databaseMigrationUrl ? createDb(config.databaseMigrationUrl) : db;
-    logger.info("Using external PostgreSQL via DATABASE_URL/config");
+    pluginMigrationDb =
+      runMigrations && config.databaseMigrationUrl ? createDb(config.databaseMigrationUrl) : db;
+    // Log the resolved DB endpoint (host:port only — never credentials) so we can
+    // confirm which Supabase pooler the serverless control plane actually connects to
+    // (:6543 transaction pooler for serverless vs :5432 session pooler).
+    let dbEndpoint = "unknown";
+    try {
+      const u = new URL(config.databaseUrl);
+      dbEndpoint = `${u.hostname}:${u.port || "(default)"}`;
+    } catch {
+      const at = config.databaseUrl.lastIndexOf("@");
+      dbEndpoint = at >= 0 ? config.databaseUrl.slice(at + 1).split(/[/?]/)[0] : "unparseable";
+    }
+    logger.info({ dbEndpoint }, "Using external PostgreSQL via DATABASE_URL/config");
+    console.log(`boot-db: connecting to ${dbEndpoint}`);
     activeDatabaseConnectionString = config.databaseUrl;
     startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+    bootMark("db+migrations");
   } else {
     const moduleName = "embedded-postgres";
     let EmbeddedPostgres: EmbeddedPostgresCtor;
@@ -325,7 +407,7 @@ export async function startServer(): Promise<StartedServer> {
     const configuredPort = config.embeddedPostgresPort;
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
-    const verboseEmbeddedPostgresLogs = process.env.PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE === "true";
+    const verboseEmbeddedPostgresLogs = process.env.VALADRIEN_OS_EMBEDDED_POSTGRES_VERBOSE === "true";
     const appendEmbeddedPostgresLog = (message: unknown) => {
       logBuffer.append(message);
       if (!verboseEmbeddedPostgresLogs) {
@@ -389,7 +471,7 @@ export async function startServer(): Promise<StartedServer> {
     if (runningPid) {
       logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
     } else {
-      const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
+      const configuredAdminConnectionString = `postgres://valadrien_os:valadrien_os@127.0.0.1:${configuredPort}/postgres`;
       try {
         const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
         if (
@@ -398,7 +480,7 @@ export async function startServer(): Promise<StartedServer> {
         ) {
           throw new Error("reachable postgres does not use the expected embedded data directory");
         }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "paperclip");
+        await ensurePostgresDatabase(configuredAdminConnectionString, "valadrien_os");
         logger.warn(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
@@ -411,8 +493,8 @@ export async function startServer(): Promise<StartedServer> {
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
         embeddedPostgres = new EmbeddedPostgres({
           databaseDir: dataDir,
-          user: "paperclip",
-          password: "paperclip",
+          user: "valadrien_os",
+          password: "valadrien_os",
           port,
           persistent: true,
           initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -451,13 +533,13 @@ export async function startServer(): Promise<StartedServer> {
       }
     }
   
-    const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
+    const embeddedAdminConnectionString = `postgres://valadrien_os:valadrien_os@127.0.0.1:${port}/postgres`;
+    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "valadrien_os");
     if (dbStatus === "created") {
-      logger.info("Created embedded PostgreSQL database: paperclip");
+      logger.info("Created embedded PostgreSQL database: valadrien-os");
     }
   
-    const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+    const embeddedConnectionString = `postgres://valadrien_os:valadrien_os@127.0.0.1:${port}/valadrien_os`;
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
@@ -516,9 +598,14 @@ export async function startServer(): Promise<StartedServer> {
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
-  const accessBackfill = await backfillPrincipalAccessCompatibility(db as any);
-  if (accessBackfill.agentMembershipsInserted > 0 || accessBackfill.humanGrantsInserted > 0) {
-    logger.info(accessBackfill, "Backfilled principal access compatibility records");
+  // One-time data backfill — owned by the persistent worker, NOT the serverless control
+  // plane. Running it on every Vercel cold boot adds DB load and risks pinning the cold
+  // start (it was the 300s-hang / EMAXCONN source). Skip on Vercel, like migrations.
+  if (!process.env.VERCEL) {
+    const accessBackfill = await backfillPrincipalAccessCompatibility(db as any);
+    if (accessBackfill.agentMembershipsInserted > 0 || accessBackfill.humanGrantsInserted > 0) {
+      logger.info(accessBackfill, "Backfilled principal access compatibility records");
+    }
   }
   if (config.deploymentMode === "authenticated") {
     const {
@@ -550,9 +637,20 @@ export async function startServer(): Promise<StartedServer> {
     betterAuthHandler = createBetterAuthHandler(auth);
     resolveSession = (req) => resolveBetterAuthSession(auth, req);
     resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
-    await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
+    // Unbounded boot DB op (reads instanceUserRoles, may seed a challenge). On Vercel it
+    // was the last unbounded await on the cold path — a stall here pins the whole
+    // serverless boot (which blocks EVERY route, incl. /api/health). Bound it like the
+    // adapter step: continue degraded on timeout (it re-runs next boot / on the worker).
+    if (process.env.VERCEL) {
+      await boundColdStartStep("initializeBoardClaimChallenge", 5_000, () =>
+        initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode }),
+      );
+    } else {
+      await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
+    }
     authReady = true;
   }
+  bootMark("auth");
 
   if (resolvedEmbeddedPostgresPort !== null && resolvedEmbeddedPostgresPort !== config.embeddedPostgresPort) {
     config.embeddedPostgresPort = resolvedEmbeddedPostgresPort;
@@ -594,7 +692,7 @@ export async function startServer(): Promise<StartedServer> {
         connectionString: activeDatabaseConnectionString,
         backupDir: config.databaseBackupDir,
         retention,
-        filenamePrefix: "paperclip",
+        filenamePrefix: "valadrien-os",
       });
       const finishedAt = new Date();
       const response: InstanceDatabaseBackupRunResult = {
@@ -653,6 +751,7 @@ export async function startServer(): Promise<StartedServer> {
     pluginWorkerManager,
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
+  bootMark("app-built");
 
   // Increase keep-alive timeouts to safely outlive default idle timeouts
   // of common reverse proxies and load balancers (like AWS ALB, Nginx, or Traefik).
@@ -671,7 +770,7 @@ export async function startServer(): Promise<StartedServer> {
     bindHost: runtimeListenHost,
     port: listenPort,
   });
-  const configuredApiUrl = process.env.PAPERCLIP_API_URL?.trim() || runtimeApiUrl;
+  const configuredApiUrl = process.env.VALADRIEN_OS_API_URL?.trim() || runtimeApiUrl;
   const runtimeApiCandidates = buildRuntimeApiCandidateUrls({
     preferredApiUrl: configuredApiUrl,
     authPublicBaseUrl: config.authPublicBaseUrl ?? null,
@@ -679,11 +778,11 @@ export async function startServer(): Promise<StartedServer> {
     bindHost: runtimeListenHost,
     port: listenPort,
   });
-  process.env.PAPERCLIP_LISTEN_HOST = runtimeListenHost;
-  process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
-  process.env.PAPERCLIP_RUNTIME_API_URL = runtimeApiUrl;
-  process.env.PAPERCLIP_RUNTIME_API_CANDIDATES_JSON = JSON.stringify(runtimeApiCandidates);
-  process.env.PAPERCLIP_API_URL = configuredApiUrl;
+  process.env.VALADRIEN_OS_LISTEN_HOST = runtimeListenHost;
+  process.env.VALADRIEN_OS_LISTEN_PORT = String(listenPort);
+  process.env.VALADRIEN_OS_RUNTIME_API_URL = runtimeApiUrl;
+  process.env.VALADRIEN_OS_RUNTIME_API_CANDIDATES_JSON = JSON.stringify(runtimeApiCandidates);
+  process.env.VALADRIEN_OS_API_URL = configuredApiUrl;
   
   setupLiveEventsWebSocketServer(server, db as any, {
     deploymentMode: config.deploymentMode,
@@ -854,7 +953,48 @@ export async function startServer(): Promise<StartedServer> {
   // Without this, adapter type validation (assertKnownAdapterType) would
   // reject valid external adapter types during the startup loading window.
   const { waitForExternalAdapters } = await import("./adapters/registry.js");
-  await waitForExternalAdapters();
+  if (process.env.VERCEL) {
+    // Bound it: if an external adapter import stalls, a serverless cold boot must not
+    // hang to the function's max duration (→ 504). Continue after the bound; adapter
+    // type validation may briefly miss a slow external type, which is recoverable.
+    await boundColdStartStep("waitForExternalAdapters", 15_000, () => waitForExternalAdapters());
+  } else {
+    await waitForExternalAdapters();
+  }
+  bootMark("adapters");
+
+  const startedServer = {
+    server,
+    app,
+    host: config.host,
+    listenPort,
+    apiUrl: configuredApiUrl,
+    databaseUrl: activeDatabaseConnectionString,
+  };
+  bootMark("ready");
+
+  if (process.env.VERCEL) {
+    printStartupBanner({
+      bind: config.bind,
+      host: config.host,
+      deploymentMode: config.deploymentMode,
+      deploymentExposure: config.deploymentExposure,
+      authReady,
+      requestedPort: requestedListenPort,
+      listenPort,
+      uiMode,
+      db: startupDbInfo,
+      migrationSummary,
+      heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
+      heartbeatSchedulerIntervalMs: config.heartbeatSchedulerIntervalMs,
+      databaseBackupEnabled: config.databaseBackupEnabled,
+      databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
+      databaseBackupRetentionDays: config.databaseBackupRetentionDays,
+      databaseBackupDir: config.databaseBackupDir,
+    });
+    logger.info("Running on Vercel — Express app exported without listen()");
+    return startedServer;
+  }
 
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {
@@ -866,7 +1006,7 @@ export async function startServer(): Promise<StartedServer> {
     server.listen(listenPort, config.host, () => {
       server.off("error", onError);
       logger.info(`Server listening on ${config.host}:${listenPort}`);
-      if (process.env.PAPERCLIP_OPEN_ON_LISTEN === "true") {
+      if (process.env.VALADRIEN_OS_OPEN_ON_LISTEN === "true") {
         const openHost = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
         const url = `http://${openHost}:${listenPort}`;
         void import("open")
@@ -925,7 +1065,7 @@ export async function startServer(): Promise<StartedServer> {
         await telemetryClient.flush();
       }
 
-      const appShutdown = (app as { locals?: { paperclipShutdown?: () => void } }).locals?.paperclipShutdown;
+      const appShutdown = (app as { locals?: { valadrienOsShutdown?: () => void } }).locals?.valadrienOsShutdown;
       appShutdown?.();
 
       if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
@@ -948,13 +1088,7 @@ export async function startServer(): Promise<StartedServer> {
     });
   }
 
-  return {
-    server,
-    host: config.host,
-    listenPort,
-    apiUrl: configuredApiUrl,
-    databaseUrl: activeDatabaseConnectionString,
-  };
+  return startedServer;
 }
 
 function isMainModule(metaUrl: string): boolean {
@@ -969,7 +1103,7 @@ function isMainModule(metaUrl: string): boolean {
 
 if (isMainModule(import.meta.url)) {
   void startServer().catch((err) => {
-    logger.error({ err }, "Paperclip server failed to start");
+    logger.error({ err }, "ValadrienOs server failed to start");
     process.exit(1);
   });
 }

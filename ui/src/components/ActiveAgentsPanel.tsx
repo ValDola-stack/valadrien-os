@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { Link } from "@/lib/router";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Issue, IssueRecoveryAction } from "@paperclipai/shared";
+import type { Issue, IssueRecoveryAction } from "@valadrien-os/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import type { TranscriptEntry } from "../adapters";
 import { issuesApi } from "../api/issues";
@@ -13,6 +13,9 @@ import {
 } from "../lib/recovery-display";
 import { ExternalLink } from "lucide-react";
 import { Identity } from "./Identity";
+import { AgentFace } from "./AgentFace";
+import { HeartbeatSpine } from "./HeartbeatSpine";
+import { runLiveState, liveCadence } from "../lib/status-colors";
 import { RunChatSurface } from "./RunChatSurface";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 
@@ -117,7 +120,7 @@ export function ActiveAgentsPanel({
 
   return (
     <div>
-      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      <h3 className="mb-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
         {title}
       </h3>
       {runs.length === 0 ? (
@@ -168,26 +171,38 @@ const AgentRunCard = memo(function AgentRunCard({
   isActive: boolean;
   className?: string;
 }) {
+  // Signature components: the run's life state drives the eyes + heartbeat spine.
+  const faceState = runLiveState(run.status);
+  // Seed by run id (not agent id) so two run cards for the SAME agent don't
+  // blink/pulse in unison — each card gets its own cadence.
+  const cad = liveCadence(run.id);
   return (
     <div className={cn(
-      "flex h-[320px] flex-col overflow-hidden rounded-xl border shadow-sm",
+      "relative flex h-[320px] flex-col overflow-hidden rounded-xl border",
       isActive
-        ? "border-cyan-500/25 bg-cyan-500/[0.04] shadow-[0_16px_40px_rgba(6,182,212,0.08)]"
+        ? "border-status-running/25 bg-status-running/[0.04]"
         : "border-border bg-background/70",
       className,
     )}>
+      {/* Heartbeat spine — the "alive" rail on the working entity's left edge. */}
+      <HeartbeatSpine
+        state={faceState}
+        beat={cad.beat}
+        delay={cad.delay}
+        className="absolute inset-y-0 left-0"
+      />
       <div className="border-b border-border/60 px-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              {isActive ? (
-                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-70" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-500" />
-                </span>
-              ) : (
-                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-muted-foreground/35" />
-              )}
+              {/* Agent eyes — live-work surface uses the animated face, not a dot. */}
+              <AgentFace
+                state={faceState}
+                size={40}
+                look={cad.look}
+                scan={cad.scan}
+                className="shrink-0"
+              />
               <Identity name={run.agentName} size="sm" className="[&>span:last-child]:!text-[11px]" />
             </div>
             <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -209,7 +224,7 @@ const AgentRunCard = memo(function AgentRunCard({
               to={`/issues/${issue?.identifier ?? run.issueId}`}
               className={cn(
                 "line-clamp-2 hover:underline",
-                isActive ? "text-cyan-700 dark:text-cyan-300" : "text-muted-foreground hover:text-foreground",
+                isActive ? "text-status-running" : "text-muted-foreground hover:text-foreground",
               )}
               title={issue?.title ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}` : issue?.identifier ?? run.issueId.slice(0, 8)}
             >

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@valadrien-os/shared";
 import {
   IssueChatThread,
   VIRTUALIZED_THREAD_ROW_THRESHOLD,
@@ -166,8 +166,8 @@ vi.mock("./IssueLinkQuicklook", () => ({
   ),
 }));
 
-vi.mock("../hooks/usePaperclipIssueRuntime", () => ({
-  usePaperclipIssueRuntime: () => ({}),
+vi.mock("../hooks/useValadrienOsIssueRuntime", () => ({
+  useValadrienOsIssueRuntime: () => ({}),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -402,7 +402,7 @@ describe("IssueChatThread", () => {
     const composer = container.querySelector('[data-testid="issue-chat-composer"]');
     expect(composer).not.toBeNull();
     expect(composer?.getAttribute("data-pending-work-mode")).toBe("planning");
-    expect(composer?.className).toContain("amber");
+    expect(composer?.className).toContain("status-warning");
 
     const toggle = container.querySelector(
       '[data-testid="issue-chat-composer-work-mode-toggle"]',
@@ -442,7 +442,7 @@ describe("IssueChatThread", () => {
     ).toBeNull();
     const composer = container.querySelector('[data-testid="issue-chat-composer"]');
     expect(composer?.getAttribute("data-pending-work-mode")).toBe("standard");
-    expect(composer?.className).not.toContain("amber");
+    expect(composer?.className).not.toContain("status-warning");
 
     const menuTrigger = container.querySelector(
       '[data-testid="issue-chat-composer-work-mode-menu"]',
@@ -464,7 +464,7 @@ describe("IssueChatThread", () => {
 
     expect(onWorkModeChange).not.toHaveBeenCalled();
     expect(composer?.getAttribute("data-pending-work-mode")).toBe("planning");
-    expect(composer?.className).toContain("amber");
+    expect(composer?.className).toContain("status-warning");
 
     const visibleChip = container.querySelector(
       '[data-testid="issue-chat-composer-work-mode-toggle"]',
@@ -1714,7 +1714,7 @@ describe("IssueChatThread", () => {
     });
   });
 
-  it("renders the transcript directly from stable Paperclip messages", () => {
+  it("renders the transcript directly from stable ValadrienOs messages", () => {
     const root = createRoot(container);
 
     act(() => {

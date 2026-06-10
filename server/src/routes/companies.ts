@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type Request } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@valadrien-os/db";
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
   companyPortabilityExportSchema,
@@ -10,9 +10,10 @@ import {
   feedbackTargetTypeSchema,
   feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
+  isFoundingAgentRole,
   updateCompanyBrandingSchema,
   updateCompanySchema,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { badRequest, forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import {
@@ -72,8 +73,8 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (!actorAgent || actorAgent.companyId !== companyId) {
       throw forbidden("Agent key cannot access another company");
     }
-    if (actorAgent.role !== "ceo") {
-      throw forbidden("Only CEO agents can update company branding");
+    if (!isFoundingAgentRole(actorAgent.role)) {
+      throw forbidden("Only founding agents (CEO, Chief of Staff, CTO) can update company branding");
     }
   }
 
@@ -86,8 +87,8 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (!actorAgent || actorAgent.companyId !== companyId) {
       throw forbidden("Agent key cannot access another company");
     }
-    if (actorAgent.role !== "ceo") {
-      throw forbidden(`Only CEO agents can manage company ${capability}`);
+    if (!isFoundingAgentRole(actorAgent.role)) {
+      throw forbidden(`Only founding agents (CEO, Chief of Staff, CTO) can manage company ${capability}`);
     }
   }
 
@@ -136,6 +137,19 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       return;
     }
     res.json(company);
+  });
+
+  // ValAdrien Cloud — managed infra entitlements for a company. Readable by
+  // the company's agents (so the founding agent can see what infra is
+  // provided) and by the board.
+  router.get("/:companyId/infra-entitlements", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type !== "agent") {
+      assertBoard(req);
+    }
+    const entitlements = await svc.listInfraEntitlements(companyId);
+    res.json(entitlements);
   });
 
   router.get("/:companyId/feedback-traces", async (req, res) => {
@@ -196,7 +210,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     const rawImportBody: unknown = req.body;
     const actor = getActorInfo(req);
     const boardUserId = req.actor.type === "board" ? req.actor.userId : null;
-    if (req.header("x-paperclip-cloud-async-import") === "1") {
+    if (req.header("x-valadrien-os-cloud-async-import") === "1") {
       assertCloudTenantCaller(req);
       cleanupTerminalImportJobs(importJobs, importJobTerminalRetentionMs);
       const job = createImportJob(cloudTenantRequestKey(req));
@@ -339,11 +353,11 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     let body: Record<string, unknown>;
 
     if (req.actor.type === "agent") {
-      // Only CEO agents may update company branding fields
+      // Only founding agents (CEO, Chief of Staff, CTO) may update company branding fields
       const agentSvc = agentService(db);
       const actorAgent = req.actor.agentId ? await agentSvc.getById(req.actor.agentId) : null;
-      if (!actorAgent || actorAgent.role !== "ceo") {
-        throw forbidden("Only CEO agents or board users may update company settings");
+      if (!actorAgent || !isFoundingAgentRole(actorAgent.role)) {
+        throw forbidden("Only founding agents (CEO, Chief of Staff, CTO) or board users may update company settings");
       }
       if (actorAgent.companyId !== companyId) {
         throw forbidden("Agent key cannot access another company");
@@ -482,8 +496,8 @@ function assertCloudTenantCaller(req: Request) {
 function cloudTenantRequestKey(req: Request) {
   return [
     req.actor.userId ?? "",
-    req.header("x-paperclip-cloud-stack-id")?.trim() ?? "",
-    req.header("x-paperclip-cloud-paperclip-company-id")?.trim() ?? "",
+    req.header("x-valadrien-os-cloud-stack-id")?.trim() ?? "",
+    req.header("x-valadrien-os-cloud-valadrien-os-company-id")?.trim() ?? "",
   ].join(":");
 }
 

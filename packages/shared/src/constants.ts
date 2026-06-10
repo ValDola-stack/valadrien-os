@@ -1,6 +1,62 @@
 export const COMPANY_STATUSES = ["active", "paused", "archived"] as const;
 export type CompanyStatus = (typeof COMPANY_STATUSES)[number];
 
+// ValAdrien Cloud — managed infrastructure model.
+// See doc/plans/2026-06-01-valadrien-cloud-managed-infra.md.
+export const COMPANY_INFRA_MODES = ["managed", "byo"] as const;
+export type CompanyInfraMode = (typeof COMPANY_INFRA_MODES)[number];
+
+export const INFRA_CAPABILITIES = [
+  "postgres",
+  "email",
+  "llm",
+  "hosting",
+  "worker",
+] as const;
+export type InfraCapability = (typeof INFRA_CAPABILITIES)[number];
+
+export const INFRA_ENTITLEMENT_MODES = [
+  "managed_shared",
+  "managed_dedicated",
+  "byo",
+] as const;
+export type InfraEntitlementMode = (typeof INFRA_ENTITLEMENT_MODES)[number];
+
+export const INFRA_ENTITLEMENT_STATUSES = [
+  "entitled",
+  "provisioned",
+  "exported",
+  "disabled",
+] as const;
+export type InfraEntitlementStatus = (typeof INFRA_ENTITLEMENT_STATUSES)[number];
+
+/**
+ * Default entitlement set seeded for a managed company at onboarding.
+ * Lazy: status is "entitled" (recorded, not yet provisioned). Hosting defaults
+ * to dedicated (cheap to isolate per the plan); everything else shared.
+ */
+export const DEFAULT_MANAGED_INFRA_ENTITLEMENTS: ReadonlyArray<{
+  capability: InfraCapability;
+  mode: InfraEntitlementMode;
+}> = [
+  { capability: "postgres", mode: "managed_shared" },
+  { capability: "email", mode: "managed_shared" },
+  { capability: "llm", mode: "managed_shared" },
+  { capability: "hosting", mode: "managed_dedicated" },
+  { capability: "worker", mode: "managed_shared" },
+];
+
+/** Expected upstream provider slug per capability (operator pool). No secrets. */
+export const MANAGED_INFRA_CAPABILITY_PROVIDERS: Readonly<
+  Record<InfraCapability, string>
+> = {
+  postgres: "supabase",
+  email: "resend",
+  llm: "openrouter",
+  hosting: "vercel",
+  worker: "railway",
+};
+
 export const DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const MAX_COMPANY_ATTACHMENT_MAX_BYTES = 1024 * 1024 * 1024;
 
@@ -44,6 +100,7 @@ export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number] | (string & 
 
 export const AGENT_ROLES = [
   "ceo",
+  "chief_of_staff",
   "cto",
   "cmo",
   "cfo",
@@ -55,11 +112,13 @@ export const AGENT_ROLES = [
   "devops",
   "researcher",
   "general",
+  "onboarding",
 ] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
   ceo: "CEO",
+  chief_of_staff: "Chief of Staff",
   cto: "CTO",
   cmo: "CMO",
   cfo: "CFO",
@@ -71,7 +130,25 @@ export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
   devops: "DevOps",
   researcher: "Researcher",
   general: "General",
+  onboarding: "Onboarding Specialist",
 };
+
+/**
+ * Roles that count as a "founding" agent of a company. Founding agents have
+ * the same platform-level capabilities (manage company settings, create other
+ * agents, assign tasks, approve work, generate invites). Use
+ * {@link isFoundingAgentRole} for all gate checks instead of literal
+ * `role === "ceo"` comparisons.
+ */
+export const FOUNDING_AGENT_ROLES = ["ceo", "chief_of_staff", "cto"] as const;
+export type FoundingAgentRole = (typeof FOUNDING_AGENT_ROLES)[number];
+
+const FOUNDING_AGENT_ROLE_SET = new Set<string>(FOUNDING_AGENT_ROLES);
+
+export function isFoundingAgentRole(role: string | null | undefined): boolean {
+  if (typeof role !== "string") return false;
+  return FOUNDING_AGENT_ROLE_SET.has(role);
+}
 
 export const AGENT_DEFAULT_MAX_CONCURRENT_RUNS = 20;
 export const WORKSPACE_BRANCH_ROUTINE_VARIABLE = "workspaceBranch";
@@ -451,7 +528,7 @@ export type SecretProviderConfigHealthStatus =
 export const SECRET_STATUSES = ["active", "disabled", "archived", "deleted"] as const;
 export type SecretStatus = (typeof SECRET_STATUSES)[number];
 
-export const SECRET_MANAGED_MODES = ["paperclip_managed", "external_reference"] as const;
+export const SECRET_MANAGED_MODES = ["valadrien_os_managed", "external_reference"] as const;
 export type SecretManagedMode = (typeof SECRET_MANAGED_MODES)[number];
 
 export const SECRET_VERSION_STATUSES = [
@@ -847,7 +924,7 @@ export type PluginApiRouteCheckoutPolicy = (typeof PLUGIN_API_ROUTE_CHECKOUT_POL
 
 /**
  * UI extension slot types. Each slot type corresponds to a mount point in the
- * Paperclip UI where plugin components can be rendered.
+ * ValadrienOs UI where plugin components can be rendered.
  *
  * @see PLUGIN_SPEC.md §19 — UI Extension Model
  */

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@valadrien-os/db";
 import {
   agents,
   companyMemberships,
@@ -7,8 +7,9 @@ import {
   issues,
   principalPermissionGrants,
   projects,
-} from "@paperclipai/db";
-import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
+} from "@valadrien-os/db";
+import { isFoundingAgentRole } from "@valadrien-os/shared";
+import type { PermissionKey, PrincipalType } from "@valadrien-os/shared";
 
 export type AuthorizationActor =
   {
@@ -92,7 +93,7 @@ function permissionForAction(action: AuthorizationAction): PermissionKey | null 
 }
 
 function canCreateAgentsLegacy(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
-  if (agent.role === "ceo") return true;
+  if (isFoundingAgentRole(agent.role)) return true;
   if (!agent.permissions || typeof agent.permissions !== "object") return false;
   return Boolean(agent.permissions.canCreateAgents);
 }

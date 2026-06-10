@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CompanySecret, EnvBinding, SecretVersionSelector } from "@paperclipai/shared";
+import type { CompanySecret, EnvBinding, SecretVersionSelector } from "@valadrien-os/shared";
 import { AlertCircle, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -298,7 +298,7 @@ export function EnvVarEditor({
         }
         if (!issues.length) return null;
         return (
-          <p className="text-[11px] text-amber-700 dark:text-amber-400 inline-flex items-start gap-1">
+          <p className="text-[11px] text-status-warning inline-flex items-start gap-1">
             <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
             <span>
               {issues.length} secret binding{issues.length === 1 ? "" : "s"} need attention:{" "}
@@ -316,7 +316,7 @@ export function EnvVarEditor({
       })()}
       <p className="text-[11px] text-muted-foreground/60">
         Set KEY to the env var name the process expects, for example GH_TOKEN. Choose Secret to resolve a stored
-        value at run start. PAPERCLIP_* variables are injected automatically.
+        value at run start. VALADRIEN_OS_* variables are injected automatically.
       </p>
     </div>
   );

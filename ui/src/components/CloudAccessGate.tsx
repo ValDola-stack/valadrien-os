@@ -4,6 +4,8 @@ import { accessApi } from "@/api/access";
 import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
+import { RoboLoading } from "./RoboLoading";
+import { RoboError } from "./RoboError";
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -12,11 +14,11 @@ function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: b
         <h1 className="text-xl font-semibold">Instance setup required</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {hasActiveInvite
-            ? "No instance admin exists yet. A bootstrap invite is already active. Check your Paperclip startup logs for the first admin invite URL, or run this command to rotate it:"
-            : "No instance admin exists yet. Run this command in your Paperclip environment to generate the first admin invite URL:"}
+            ? "No instance admin exists yet. A bootstrap invite is already active. Check your ValadrienOs startup logs for the first admin invite URL, or run this command to rotate it:"
+            : "No instance admin exists yet. Run this command in your ValadrienOs environment to generate the first admin invite URL:"}
         </p>
         <pre className="mt-4 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs">
-{`pnpm paperclipai auth bootstrap-ceo`}
+{`pnpm valadrien-os auth bootstrap-ceo`}
         </pre>
       </div>
     </div>
@@ -30,7 +32,7 @@ function NoBoardAccessPage() {
         <h1 className="text-xl font-semibold">No company access</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           This account is signed in, but it does not have an active company membership or instance-admin access on
-          this Paperclip instance.
+          this ValadrienOs instance.
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           Use a company invite or sign in with an account that already belongs to this org.
@@ -62,7 +64,11 @@ export function CloudAccessGate() {
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
     enabled: isAuthenticatedMode,
-    retry: false,
+    // getSession() returns null on a clean 401 (no thrown error), so a retry only kicks
+    // in for transient failures (cold-boot timeout / 5xx) — never for "logged out".
+    // Retry a couple times so a cold get-session blip doesn't surface as a forced
+    // sign-out (the login/nav lag the cold-boot hang caused).
+    retry: 2,
   });
 
   const boardAccessQuery = useQuery({
@@ -77,23 +83,38 @@ export function CloudAccessGate() {
     (isAuthenticatedMode && sessionQuery.isLoading) ||
     (isAuthenticatedMode && !!sessionQuery.data && boardAccessQuery.isLoading)
   ) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
+    return <RoboLoading />;
   }
 
   if (healthQuery.error || boardAccessQuery.error) {
     return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-destructive">
-        {healthQuery.error instanceof Error
-          ? healthQuery.error.message
-          : boardAccessQuery.error instanceof Error
-            ? boardAccessQuery.error.message
-            : "Failed to load app state"}
-      </div>
+      <RoboError
+        error={healthQuery.error ?? boardAccessQuery.error ?? "Failed to load app state"}
+        onRetry={() => {
+          void healthQuery.refetch();
+          void boardAccessQuery.refetch();
+        }}
+      />
     );
   }
 
   if (isAuthenticatedMode && healthQuery.data?.bootstrapStatus === "bootstrap_pending") {
     return <BootstrapPendingPage hasActiveInvite={healthQuery.data.bootstrapInviteActive} />;
+  }
+
+  // A get-session that THREW (cold-boot timeout / 5xx / network) is a transient failure,
+  // NOT a sign-out — getSession() resolves to null (not an error) for a real 401. Don't
+  // bounce the user to /auth on a transient error; keep the shell and offer Retry. This
+  // is the most direct fix for "login still lags / drops me to sign-in" under cold boots.
+  if (isAuthenticatedMode && sessionQuery.error) {
+    return (
+      <RoboError
+        error={sessionQuery.error}
+        onRetry={() => {
+          void sessionQuery.refetch();
+        }}
+      />
+    );
   }
 
   if (isAuthenticatedMode && !sessionQuery.data) {

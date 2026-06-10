@@ -3,7 +3,7 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@valadrien-os/db";
 import {
   activityLog,
   executionWorkspaces,
@@ -12,7 +12,7 @@ import {
   issueRelations,
   issues as issueRows,
   projectWorkspaces,
-} from "@paperclipai/db";
+} from "@valadrien-os/db";
 import {
   addIssueCommentSchema,
   acceptIssueThreadInteractionSchema,
@@ -42,14 +42,15 @@ import {
   updateIssueSchema,
   getClosedIsolatedExecutionWorkspaceMessage,
   isClosedIsolatedExecutionWorkspace,
+  isFoundingAgentRole,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
   type CompanySearchQuery,
   type CompanySearchResponse,
   type ExecutionWorkspace,
   type IssueRelationIssueSummary,
   type SuccessfulRunHandoffState,
-} from "@paperclipai/shared";
-import { trackAgentTaskCompleted } from "@paperclipai/shared/telemetry";
+} from "@valadrien-os/shared";
+import { trackAgentTaskCompleted } from "@valadrien-os/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
@@ -1234,7 +1235,7 @@ export function issueRoutes(
       res.status(403).json({ error: "Forbidden" });
       return false;
     }
-    if (actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents)) return true;
+    if (isFoundingAgentRole(actorAgent.role) || Boolean(actorAgent.permissions?.canCreateAgents)) return true;
     res.status(403).json({ error: "Missing permission to link approvals" });
     return false;
   }

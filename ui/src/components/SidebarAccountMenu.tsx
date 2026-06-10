@@ -10,7 +10,7 @@ import {
   Sun,
   UserRoundPen,
 } from "lucide-react";
-import type { DeploymentMode } from "@paperclipai/shared";
+import type { DeploymentMode } from "@valadrien-os/shared";
 import { Link } from "@/lib/router";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
@@ -21,7 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../lib/utils";
 
 const PROFILE_SETTINGS_PATH = "/instance/settings/profile";
-const DOCS_URL = "https://docs.paperclip.ing/";
+const DOCS_URL = "https://docs.TODO_DOMAIN/";
 
 interface SidebarAccountMenuProps {
   deploymentMode?: DeploymentMode;
@@ -160,12 +160,12 @@ export function SidebarAccountMenu({
           side="top"
           align="start"
           sideOffset={10}
-          className="w-[277px] max-w-[calc(100vw-1rem)] overflow-hidden rounded-t-2xl rounded-b-none border-border p-0 shadow-2xl"
+          className="w-[277px] max-w-[calc(100vw-1rem)] overflow-hidden rounded-none border-border p-0"
         >
-          <div className="h-24 bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(var(--accent))_55%,hsl(var(--muted))_100%)]" />
+          <div className="h-20 border-b border-border bg-secondary" />
           <div className="-mt-8 px-4 pb-4">
             <div className="flex items-start gap-3">
-              <div className="rounded-2xl border-4 border-popover bg-popover p-0.5 shadow-sm">
+              <div className="rounded-[3px] border-4 border-popover bg-popover p-0.5">
                 <Avatar size="lg">
                   {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
                   <AvatarFallback>{initials}</AvatarFallback>
@@ -180,7 +180,7 @@ export function SidebarAccountMenu({
                 </div>
                 <p className="truncate text-sm text-muted-foreground">{secondaryLabel}</p>
                 {version ? (
-                  <p className="mt-1 text-xs text-muted-foreground">Paperclip v{version}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">ValadrienOs v{version}</p>
                 ) : null}
               </div>
             </div>
@@ -209,7 +209,7 @@ export function SidebarAccountMenu({
               />
               <MenuAction
                 label="Documentation"
-                description="Open Paperclip docs in a new tab."
+                description="Open ValadrienOs docs in a new tab."
                 icon={BookOpen}
                 href={DOCS_URL}
                 external

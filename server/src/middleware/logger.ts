@@ -7,7 +7,7 @@ import { resolveDefaultLogsDir, resolveHomeAwarePath } from "../home-paths.js";
 import { shouldSilenceHttpSuccessLog } from "./http-log-policy.js";
 
 function resolveServerLogDir(): string {
-  const envOverride = process.env.PAPERCLIP_LOG_DIR?.trim();
+  const envOverride = process.env.VALADRIEN_OS_LOG_DIR?.trim();
   if (envOverride) return resolveHomeAwarePath(envOverride);
 
   const fileLogDir = readConfigFile()?.logging.logDir?.trim();
@@ -17,9 +17,6 @@ function resolveServerLogDir(): string {
 }
 
 const logDir = resolveServerLogDir();
-fs.mkdirSync(logDir, { recursive: true });
-
-const logFile = path.join(logDir, "server.log");
 
 const sharedOpts = {
   translateTime: "SYS:HH:MM:ss",
@@ -27,23 +24,42 @@ const sharedOpts = {
   singleLine: true,
 };
 
-export const logger = pino({
-  level: "debug",
-  redact: ["req.headers.authorization"],
-}, pino.transport({
-  targets: [
-    {
-      target: "pino-pretty",
-      options: { ...sharedOpts, ignore: "pid,hostname,req,res,responseTime", colorize: true, destination: 1 },
-      level: "info",
-    },
+const vercelLogTargets: pino.TransportTargetOptions[] = [
+  {
+    target: "pino-pretty",
+    options: { ...sharedOpts, ignore: "pid,hostname,req,res,responseTime", colorize: true, destination: 1 },
+    level: "info",
+  },
+];
+
+function createLogTargets(): pino.TransportTargetOptions[] {
+  if (process.env.VERCEL) {
+    return vercelLogTargets;
+  }
+
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, "server.log");
+  return [
+    ...vercelLogTargets,
     {
       target: "pino-pretty",
       options: { ...sharedOpts, colorize: false, destination: logFile, mkdir: true },
       level: "debug",
     },
-  ],
-}));
+  ];
+}
+
+export const logger = process.env.VERCEL
+  ? pino({
+      level: "debug",
+      redact: ["req.headers.authorization"],
+    })
+  : pino({
+      level: "debug",
+      redact: ["req.headers.authorization"],
+    }, pino.transport({
+      targets: createLogTargets(),
+    }));
 
 export const httpLogger = pinoHttp({
   logger,

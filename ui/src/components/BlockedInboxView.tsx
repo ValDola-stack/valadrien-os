@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@valadrien-os/shared";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -141,7 +141,7 @@ export function BlockedInboxView({
       <div
         data-testid="blocked-inbox-error"
         role="alert"
-        className="flex flex-col gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 p-4 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+        className="flex flex-col gap-2 rounded-md border border-status-warning/30 bg-status-warning/12 p-4 text-status-warning"
       >
         <div className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -155,7 +155,7 @@ export function BlockedInboxView({
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 shrink-0 border-amber-400/70 bg-white/40 text-amber-900 hover:bg-white/70 dark:bg-amber-500/20 dark:text-amber-100"
+            className="h-7 shrink-0 border-status-warning/40 text-status-warning hover:bg-status-warning/12"
             onClick={() => void refetch()}
             disabled={isFetching}
           >
@@ -172,7 +172,7 @@ export function BlockedInboxView({
         data-testid="blocked-inbox-empty"
         className="flex flex-col items-center gap-3 rounded-lg border border-border/70 bg-card/40 px-6 py-10 text-center"
       >
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-status-success/12 text-status-success">
           <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="space-y-1">

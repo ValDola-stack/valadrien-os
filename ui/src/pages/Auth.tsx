@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
+import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { getRememberedInvitePath } from "../lib/invite-memory";
 import { Button } from "@/components/ui/button";
-import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
-import { Sparkles } from "lucide-react";
+import { AuthAtlas } from "@/components/AuthAtlas";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -28,6 +28,20 @@ export function AuthPage() {
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
     retry: false,
+  });
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+  });
+  const googleAuthEnabled = health?.googleAuthEnabled === true;
+
+  const googleMutation = useMutation({
+    mutationFn: () =>
+      authApi.signInSocial({ provider: "google", callbackURL: nextPath }),
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+    },
   });
 
   useEffect(() => {
@@ -78,12 +92,14 @@ export function AuthPage() {
       <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
         <div className="w-full max-w-md mx-auto my-auto px-8 py-12">
           <div className="flex items-center gap-2 mb-8">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Paperclip</span>
+            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[3px] border border-primary font-serif text-[13px] leading-none text-primary">
+              V
+            </span>
+            <span className="text-sm font-semibold tracking-tight">ValAdrien OS</span>
           </div>
 
-          <h1 className="text-xl font-semibold">
-            {mode === "sign_in" ? "Sign in to Paperclip" : "Create your Paperclip account"}
+          <h1 className="font-serif text-2xl font-medium tracking-tight">
+            {mode === "sign_in" ? "Sign in to ValAdrien OS" : "Create your ValAdrien OS account"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "sign_in"
@@ -159,6 +175,29 @@ export function AuthPage() {
             </Button>
           </form>
 
+          {googleAuthEnabled && (
+            <>
+              <div className="my-5 flex items-center gap-3">
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">or</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={googleMutation.isPending}
+                onClick={() => {
+                  if (googleMutation.isPending) return;
+                  setError(null);
+                  googleMutation.mutate();
+                }}
+              >
+                {googleMutation.isPending ? "Redirecting…" : "Continue with Google"}
+              </Button>
+            </>
+          )}
+
           <div className="mt-5 text-sm text-muted-foreground">
             {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
             <button
@@ -175,9 +214,9 @@ export function AuthPage() {
         </div>
       </div>
 
-      {/* Right half — ASCII art animation (hidden on mobile) */}
-      <div className="hidden md:block w-1/2 overflow-hidden">
-        <AsciiArtAnimation />
+      {/* Right half — live obsidian-brain atlas (hidden on mobile) */}
+      <div className="hidden md:block w-1/2 overflow-hidden border-l border-border">
+        <AuthAtlas />
       </div>
     </div>
   );

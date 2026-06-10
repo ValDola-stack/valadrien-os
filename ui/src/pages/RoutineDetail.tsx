@@ -72,7 +72,7 @@ import type {
   RoutineEnvConfig,
   RoutineTrigger,
   RoutineVariable,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 
 const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active"];
 const catchUpPolicies = ["skip_missed", "enqueue_missed_with_cap"];
@@ -195,7 +195,7 @@ function TriggerEditor({
           {trigger.kind === "schedule" ? <Clock3 className="h-3.5 w-3.5" /> : trigger.kind === "webhook" ? <Webhook className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />}
           {trigger.label ?? trigger.kind}
         </div>
-        <span className="text-xs text-muted-foreground">
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">
           {trigger.kind === "schedule" && trigger.nextRunAt
             ? `Next: ${new Date(trigger.nextRunAt).toLocaleString()}`
             : trigger.kind === "webhook"
@@ -521,7 +521,7 @@ export function RoutineDetail() {
       }
       pushToast({
         title: "Failed to save routine",
-        body: error instanceof Error ? error.message : "Paperclip could not save the routine.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not save the routine.",
         tone: "error",
       });
     },
@@ -555,7 +555,7 @@ export function RoutineDetail() {
     onError: (error) => {
       pushToast({
         title: "Routine run failed",
-        body: error instanceof Error ? error.message : "Paperclip could not start the routine run.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not start the routine run.",
         tone: "error",
       });
     },
@@ -577,7 +577,7 @@ export function RoutineDetail() {
     onError: (error) => {
       pushToast({
         title: "Failed to update routine",
-        body: error instanceof Error ? error.message : "Paperclip could not update the routine.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not update the routine.",
         tone: "error",
       });
     },
@@ -626,7 +626,7 @@ export function RoutineDetail() {
     onError: (error) => {
       pushToast({
         title: "Failed to add trigger",
-        body: error instanceof Error ? error.message : "Paperclip could not create the trigger.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not create the trigger.",
         tone: "error",
       });
     },
@@ -649,7 +649,7 @@ export function RoutineDetail() {
     onError: (error) => {
       pushToast({
         title: "Failed to update trigger",
-        body: error instanceof Error ? error.message : "Paperclip could not update the trigger.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not update the trigger.",
         tone: "error",
       });
     },
@@ -671,7 +671,7 @@ export function RoutineDetail() {
     onError: (error) => {
       pushToast({
         title: "Failed to delete trigger",
-        body: error instanceof Error ? error.message : "Paperclip could not delete the trigger.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not delete the trigger.",
         tone: "error",
       });
     },
@@ -695,7 +695,7 @@ export function RoutineDetail() {
     onError: (error) => {
       pushToast({
         title: "Failed to rotate webhook secret",
-        body: error instanceof Error ? error.message : "Paperclip could not rotate the webhook secret.",
+        body: error instanceof Error ? error.message : "ValadrienOs could not rotate the webhook secret.",
         tone: "error",
       });
     },
@@ -771,7 +771,7 @@ export function RoutineDetail() {
   const automationLabelClassName = routine.status === "archived"
     ? "text-muted-foreground"
     : automationEnabled
-      ? "text-emerald-400"
+      ? "text-status-success"
       : "text-muted-foreground";
 
   return (
@@ -781,7 +781,7 @@ export function RoutineDetail() {
         <div className="min-w-0 flex-1 space-y-2">
           <textarea
             ref={titleInputRef}
-            className="w-full resize-none overflow-hidden bg-transparent text-xl font-bold outline-none placeholder:text-muted-foreground/50"
+            className="w-full resize-none overflow-hidden bg-transparent font-serif text-2xl font-medium tracking-tight outline-none placeholder:text-muted-foreground/50"
             placeholder="Routine title"
             rows={1}
             value={editDraft.title}
@@ -840,7 +840,12 @@ export function RoutineDetail() {
             disabled={automationToggleDisabled}
             aria-label={automationEnabled ? "Pause automatic triggers" : "Enable automatic triggers"}
           />
-          <span className={`min-w-[3.75rem] text-sm font-medium ${automationLabelClassName}`}>
+          <span className={`inline-flex min-w-[3.75rem] items-center gap-1.5 text-sm font-medium ${automationLabelClassName}`}>
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                automationEnabled ? "bg-status-running" : "bg-muted-foreground/50"
+              }`}
+            />
             {automationLabel}
           </span>
         </div>
@@ -848,10 +853,10 @@ export function RoutineDetail() {
 
       {/* Secret message banner */}
       {secretMessage && (
-        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 space-y-3 text-sm">
+        <div className="rounded-lg border border-status-info/30 bg-status-info/10 p-4 space-y-3 text-sm">
           <div>
             <p className="font-medium">{secretMessage.title}</p>
-            <p className="text-xs text-muted-foreground">Save this now. Paperclip will not show the secret value again.</p>
+            <p className="text-xs text-muted-foreground">Save this now. ValadrienOs will not show the secret value again.</p>
           </div>
           <div className="space-y-3">
             {secretMessage.entries.map((entry, index) => (
@@ -883,10 +888,10 @@ export function RoutineDetail() {
 
       {/* Save conflict banner */}
       {saveConflict && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
+        <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
-              <p className="font-medium text-amber-200">Out of date</p>
+              <p className="font-medium text-status-warning">Out of date</p>
               <p className="text-xs text-muted-foreground">
                 This routine changed while you were editing. Reload to merge the latest revision before
                 saving again.
@@ -912,7 +917,7 @@ export function RoutineDetail() {
       )}
 
       {!routine.assigneeAgentId ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-900 dark:text-amber-200">
+        <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 p-4 text-sm text-status-warning">
           Default agent required. This routine can stay as a draft and still run manually, but automation stays paused until you assign a default agent.
         </div>
       ) : null}
@@ -1043,7 +1048,7 @@ export function RoutineDetail() {
         <CollapsibleContent className="pt-3">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Concurrency</p>
+              <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Concurrency</p>
               <Select
                 value={editDraft.concurrencyPolicy}
                 onValueChange={(concurrencyPolicy) => setEditDraft((current) => ({ ...current, concurrencyPolicy }))}
@@ -1060,7 +1065,7 @@ export function RoutineDetail() {
               <p className="text-xs text-muted-foreground">{concurrencyPolicyDescriptions[editDraft.concurrencyPolicy]}</p>
             </div>
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Catch-up</p>
+              <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Catch-up</p>
               <Select
                 value={editDraft.catchUpPolicy}
                 onValueChange={(catchUpPolicy) => setEditDraft((current) => ({ ...current, catchUpPolicy }))}
@@ -1083,7 +1088,7 @@ export function RoutineDetail() {
       {/* Save bar */}
       <div className="flex items-center justify-between">
         {isEditDirty ? (
-          <span className="text-xs text-amber-600">Unsaved changes</span>
+          <span className="text-xs text-status-warning">Unsaved changes</span>
         ) : (
           <span />
         )}
@@ -1108,7 +1113,7 @@ export function RoutineDetail() {
           <TabsTrigger value="runs" className="gap-1.5">
             <Play className="h-3.5 w-3.5" />
             Runs
-            {hasLiveRun && <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />}
+            {hasLiveRun && <span className="h-2 w-2 rounded-full bg-status-running animate-pulse" />}
           </TabsTrigger>
 <TabsTrigger value="activity" className="gap-1.5">
             <ActivityIcon className="h-3.5 w-3.5" />
@@ -1227,7 +1232,7 @@ export function RoutineDetail() {
                       </Link>
                     )}
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0 ml-2">{timeAgo(run.triggeredAt)}</span>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground shrink-0 ml-2">{timeAgo(run.triggeredAt)}</span>
                 </div>
               ))}
             </div>
@@ -1255,7 +1260,7 @@ export function RoutineDetail() {
                       </span>
                     )}
                   </div>
-                  <span className="text-muted-foreground/60 shrink-0">{timeAgo(event.createdAt)}</span>
+                  <span className="font-mono tabular-nums text-muted-foreground/60 shrink-0">{timeAgo(event.createdAt)}</span>
                 </div>
               ))}
             </div>
@@ -1265,7 +1270,7 @@ export function RoutineDetail() {
         <TabsContent value="secrets" className="space-y-3">
           <p className="text-xs text-muted-foreground">
             Routine secrets apply to every issue this routine creates. They override matching keys in
-            project and agent env. <span className="font-mono">PAPERCLIP_*</span> variables are reserved.
+            project and agent env. <span className="font-mono">VALADRIEN_OS_*</span> variables are reserved.
           </p>
           <EnvVarEditor
             value={(editDraft.env ?? {}) as Record<string, EnvBinding>}

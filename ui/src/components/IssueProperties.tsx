@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
-import type { Issue, IssueLabel, Project, WorkspaceRuntimeService } from "@paperclipai/shared";
+import type { Issue, IssueLabel, Project, WorkspaceRuntimeService } from "@valadrien-os/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AdapterModel } from "../api/agents";
 import { accessApi } from "../api/access";
@@ -77,7 +77,7 @@ function TruncatedCopyable({ value, icon: Icon }: { value: string; icon: React.C
       >
         {value}
       </button>
-      {copied && <Check className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />}
+      {copied && <Check className="h-3 w-3 text-status-success shrink-0 mt-0.5" />}
     </div>
   );
 }
@@ -264,7 +264,7 @@ function RemovableIssueReferencePill({
       <span
         data-mention-kind="issue"
         className={cn(
-          "paperclip-mention-chip paperclip-mention-chip--issue group",
+          "valadrien-os-mention-chip valadrien-os-mention-chip--issue group",
           "inline-flex items-center gap-1 rounded-full border border-border py-0.5 pl-1 pr-2 text-xs",
         )}
         title={issue.title}
@@ -985,7 +985,7 @@ export function IssueProperties({
   ) : null;
   const scheduledRetryTrigger = (
     <span className="inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
-      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-600 dark:text-cyan-400" aria-hidden="true" />
+      <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-running" aria-hidden="true" />
       <span
         className="min-w-0 text-sm break-words text-foreground"
         title={scheduledRetryAbsolute ?? undefined}
@@ -2032,7 +2032,7 @@ export function IssueProperties({
                   href={liveWorkspaceService.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-w-0 items-start gap-1 text-sm font-mono text-emerald-700 hover:text-emerald-800 hover:underline dark:text-emerald-300 dark:hover:text-emerald-200"
+                  className="inline-flex min-w-0 items-start gap-1 text-sm font-mono text-status-running hover:text-status-running/80 hover:underline"
                 >
                   <span className="min-w-0 break-all">{liveWorkspaceService.url}</span>
                   <ExternalLink className="mt-1 h-3 w-3 shrink-0" />

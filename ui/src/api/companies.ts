@@ -8,7 +8,7 @@ import type {
   CompanyPortabilityPreviewRequest,
   CompanyPortabilityPreviewResult,
   UpdateCompanyBranding,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { api } from "./client";
 
 export type CompanyStats = Record<string, { agentCount: number; issueCount: number }>;
@@ -20,6 +20,8 @@ export const companiesApi = {
   create: (data: {
     name: string;
     description?: string | null;
+    websiteUrl?: string | null;
+    founderUrl?: string | null;
     budgetMonthlyCents?: number;
   }) =>
     api.post<Company>("/companies", data),

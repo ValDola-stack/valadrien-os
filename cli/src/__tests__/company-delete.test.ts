@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Company } from "@paperclipai/shared";
+import type { Company } from "@valadrien-os/shared";
 import { assertDeleteConfirmation, resolveCompanyForDeletion } from "../commands/client/company.js";
 
 function makeCompany(overrides: Partial<Company>): Company {
@@ -12,6 +12,9 @@ function makeCompany(overrides: Partial<Company>): Company {
     pausedAt: null,
     issuePrefix: "ALP",
     issueCounter: 1,
+    websiteUrl: null,
+    founderUrl: null,
+    infraMode: "managed",
     budgetMonthlyCents: 0,
     spentMonthlyCents: 0,
     attachmentMaxBytes: 10 * 1024 * 1024,
@@ -38,7 +41,7 @@ describe("resolveCompanyForDeletion", () => {
     }),
     makeCompany({
       id: "22222222-2222-2222-2222-222222222222",
-      name: "Paperclip",
+      name: "ValadrienOs",
       issuePrefix: "PAP",
     }),
   ];

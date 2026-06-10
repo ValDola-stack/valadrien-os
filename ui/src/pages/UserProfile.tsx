@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, UserRound } from "lucide-react";
-import type { UserProfileDailyPoint, UserProfileWindowStats } from "@paperclipai/shared";
+import type { UserProfileDailyPoint, UserProfileWindowStats } from "@valadrien-os/shared";
 import { Link, useParams } from "@/lib/router";
 import { userProfilesApi } from "../api/userProfiles";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
@@ -43,9 +43,9 @@ function completionRate(stats: UserProfileWindowStats) {
 function HeroStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-2xl font-semibold tabular-nums sm:text-3xl">{value}</div>
-      <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      {hint ? <div className="mt-0.5 text-xs text-muted-foreground/70">{hint}</div> : null}
+      <div className="font-mono text-2xl font-semibold tabular-nums sm:text-3xl">{value}</div>
+      <div className="mt-1 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+      {hint ? <div className="mt-0.5 font-mono text-xs tabular-nums text-muted-foreground/70">{hint}</div> : null}
     </div>
   );
 }
@@ -55,7 +55,7 @@ function WindowColumn({ stats }: { stats: UserProfileWindowStats }) {
   return (
     <div className="flex min-w-0 flex-col gap-4 border-l border-border pl-5 first:border-l-0 first:pl-0">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{stats.label}</h2>
+        <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{stats.label}</h2>
         <span className="text-[11px] text-muted-foreground tabular-nums">{completionRate(stats)} done</span>
       </div>
 
@@ -83,7 +83,7 @@ function WindowColumn({ stats }: { stats: UserProfileWindowStats }) {
 function Metric({ value, label }: { value: string; label: string }) {
   return (
     <div className="min-w-0">
-      <div className="truncate text-xl font-semibold tabular-nums">{value}</div>
+      <div className="truncate font-mono text-xl font-semibold tabular-nums">{value}</div>
       <div className="mt-0.5 text-[11px] text-muted-foreground">{label}</div>
     </div>
   );
@@ -98,9 +98,9 @@ function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-3">
-        <h2 className="text-sm font-semibold">Last 14 days</h2>
+        <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Last 14 days</h2>
         <div className="flex items-baseline gap-4 text-xs text-muted-foreground">
-          <span className="tabular-nums text-foreground">{formatTokens(totalTokensSum)}</span>
+          <span className="font-mono tabular-nums text-foreground">{formatTokens(totalTokensSum)}</span>
           <span>tokens total</span>
         </div>
       </div>
@@ -120,7 +120,7 @@ function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
               />
               {completedPct > 0 ? (
                 <div
-                  className="mt-1 w-full rounded-full bg-emerald-500/80"
+                  className="mt-1 w-full rounded-full bg-status-success/80"
                   style={{ height: 2, opacity: Math.min(1, 0.35 + completedPct / 100) }}
                 />
               ) : null}
@@ -135,12 +135,12 @@ function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
           </div>
         ))}
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-4 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="mt-4 flex flex-wrap items-center gap-4 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 bg-foreground/80" /> tokens / day
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-[3px] w-4 rounded-full bg-emerald-500/80" /> completions
+          <span className="h-[3px] w-4 rounded-full bg-status-success/80" /> completions
         </span>
       </div>
     </section>
@@ -169,8 +169,8 @@ function UsageList({
   return (
     <section>
       <div className="flex items-baseline justify-between gap-3 border-b border-border pb-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="text-xs text-muted-foreground tabular-nums">{rows.length}</span>
+        <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</h2>
+        <span className="font-mono text-xs text-muted-foreground tabular-nums">{rows.length}</span>
       </div>
       {rows.length === 0 ? (
         <div className="pt-4 text-sm text-muted-foreground">{empty}</div>
@@ -271,10 +271,10 @@ export function UserProfile() {
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="truncate text-2xl font-semibold">{displayName}</h1>
-              <span className="text-sm text-muted-foreground">@{data.user.slug}</span>
+              <h1 className="truncate font-serif text-2xl font-medium tracking-tight">{displayName}</h1>
+              <span className="font-mono text-sm text-muted-foreground">@{data.user.slug}</span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono text-xs text-muted-foreground">
               {data.user.email ? <span className="truncate">{data.user.email}</span> : null}
               {data.user.email ? <span aria-hidden>·</span> : null}
               <span>{metaParts.join(" · ")}</span>
@@ -299,8 +299,8 @@ export function UserProfile() {
       <div className="grid gap-10 pt-2 xl:grid-cols-2">
         <section>
           <div className="flex items-baseline justify-between gap-3 border-b border-border pb-3">
-            <h2 className="text-sm font-semibold">Recent tasks</h2>
-            <span className="text-xs text-muted-foreground tabular-nums">{data.recentIssues.length}</span>
+            <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Recent tasks</h2>
+            <span className="font-mono text-xs text-muted-foreground tabular-nums">{data.recentIssues.length}</span>
           </div>
           {data.recentIssues.length === 0 ? (
             <div className="pt-4 text-sm text-muted-foreground">No touched tasks yet.</div>
@@ -316,7 +316,7 @@ export function UserProfile() {
                     <span className="truncate text-sm">{issue.title}</span>
                     <span className="flex items-center gap-3 sm:justify-end">
                       <StatusBadge status={issue.status} />
-                      <span className="text-xs tabular-nums text-muted-foreground">{relativeTime(issue.updatedAt)}</span>
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">{relativeTime(issue.updatedAt)}</span>
                     </span>
                   </Link>
                 </li>
@@ -327,8 +327,8 @@ export function UserProfile() {
 
         <section>
           <div className="flex items-baseline justify-between gap-3 border-b border-border pb-3">
-            <h2 className="text-sm font-semibold">Recent activity</h2>
-            <span className="text-xs text-muted-foreground tabular-nums">{data.recentActivity.length}</span>
+            <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Recent activity</h2>
+            <span className="font-mono text-xs text-muted-foreground tabular-nums">{data.recentActivity.length}</span>
           </div>
           {data.recentActivity.length === 0 ? (
             <div className="pt-4 text-sm text-muted-foreground">No direct user actions recorded yet.</div>
@@ -342,7 +342,7 @@ export function UserProfile() {
                       {event.entityType} · {event.entityId.slice(0, 12)}
                     </div>
                   </div>
-                  <span className="text-xs tabular-nums text-muted-foreground sm:justify-self-end">{relativeTime(event.createdAt)}</span>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground sm:justify-self-end">{relativeTime(event.createdAt)}</span>
                 </li>
               ))}
             </ul>

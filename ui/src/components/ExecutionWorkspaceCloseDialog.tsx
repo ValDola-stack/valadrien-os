@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ExecutionWorkspace } from "@paperclipai/shared";
+import type { ExecutionWorkspace } from "@valadrien-os/shared";
 import { Link } from "@/lib/router";
 import { Loader2 } from "lucide-react";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
@@ -30,9 +30,9 @@ function readinessTone(state: "ready" | "ready_with_warnings" | "blocked") {
     return "border-destructive/30 bg-destructive/5 text-destructive";
   }
   if (state === "ready_with_warnings") {
-    return "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300";
+    return "border-status-warning/30 bg-status-warning/12 text-status-warning";
   }
-  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  return "border-status-success/30 bg-status-success/12 text-status-success";
 }
 
 export function ExecutionWorkspaceCloseDialog({
@@ -93,7 +93,7 @@ export function ExecutionWorkspaceCloseDialog({
           <DialogTitle>{actionLabel}</DialogTitle>
           <DialogDescription className="break-words">
             Archive <span className="font-medium text-foreground">{workspaceName}</span> and clean up any owned workspace
-            artifacts. Paperclip keeps the workspace record and issue history, but removes it from active workspace views.
+            artifacts. ValadrienOs keeps the workspace record and issue history, but removes it from active workspace views.
           </DialogDescription>
         </DialogHeader>
 
@@ -163,7 +163,7 @@ export function ExecutionWorkspaceCloseDialog({
                 <h3 className="text-sm font-medium">Warnings</h3>
                 <ul className="space-y-2 text-sm text-muted-foreground">
                   {readiness.warnings.map((warning) => (
-                    <li key={warning} className="break-words rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                    <li key={warning} className="break-words rounded-lg border border-status-warning/30 bg-status-warning/12 px-3 py-2">
                       {warning}
                     </li>
                   ))}
@@ -262,7 +262,7 @@ export function ExecutionWorkspaceCloseDialog({
             </section>
 
             {currentStatus === "cleanup_failed" ? (
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-status-warning/30 bg-status-warning/12 px-4 py-3 text-sm text-muted-foreground">
                 Cleanup previously failed on this workspace. Retrying close will rerun the cleanup flow and update the
                 workspace status if it succeeds.
               </div>

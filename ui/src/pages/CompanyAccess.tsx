@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
   type Agent,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { Shield, ShieldCheck, Trash2, Users } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
 import { agentsApi } from "@/api/agents";
@@ -238,7 +238,7 @@ export function CompanyAccess() {
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Company Members</h1>
+          <h1 className="font-serif text-lg font-medium">Company Members</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
           Manage the people who can work in {selectedCompany?.name}. Members can collaborate across the company by default.
@@ -249,7 +249,7 @@ export function CompanyAccess() {
       </div>
 
       {access && !access.currentUserRole && (
-        <div className="rounded-xl border border-amber-500/40 px-4 py-3 text-sm text-amber-200">
+        <div className="rounded-xl border border-status-warning/40 px-4 py-3 text-sm text-status-warning">
           This account can manage access here through instance-admin privileges, but it does not currently hold an active company membership.
         </div>
       )}
@@ -310,7 +310,7 @@ export function CompanyAccess() {
         ) : null}
 
         <div className="overflow-hidden rounded-xl border border-border">
-          <div className="grid grid-cols-[minmax(0,1.5fr)_120px_120px_180px] gap-3 border-b border-border px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="grid grid-cols-[minmax(0,1.5fr)_120px_120px_180px] gap-3 border-b border-border px-4 py-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             <div>User account</div>
             <div>Role</div>
             <div>Status</div>
@@ -553,7 +553,7 @@ export function CompanyAccessLegacyRoute() {
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Advanced Permissions</h1>
+          <h1 className="font-serif text-lg font-medium">Advanced Permissions</h1>
         </div>
         <p className="text-sm text-muted-foreground">
           Advanced access, scoped assignment, and explicit grant controls are provided by installed company settings extensions.
@@ -564,7 +564,7 @@ export function CompanyAccessLegacyRoute() {
         <div className="space-y-2">
           <h2 className="text-sm font-semibold">Advanced permissions unavailable</h2>
           <p className="text-sm text-muted-foreground">
-            Core Paperclip keeps enforcing company boundaries and any existing restrictive policy data, but editing advanced permissions requires an installed extension.
+            Core ValadrienOs keeps enforcing company boundaries and any existing restrictive policy data, but editing advanced permissions requires an installed extension.
           </p>
           {errorMessage ? (
             <p className="text-sm text-destructive">Plugin extensions unavailable: {errorMessage}</p>

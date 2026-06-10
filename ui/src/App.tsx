@@ -7,6 +7,8 @@ import { CloudAccessGate } from "./components/CloudAccessGate";
 import { Dashboard } from "./pages/Dashboard";
 import { DashboardLive } from "./pages/DashboardLive";
 import { Companies } from "./pages/Companies";
+import { InstanceHome } from "./pages/InstanceHome";
+import { RoboLoading } from "./components/RoboLoading";
 import { Agents } from "./pages/Agents";
 import { AgentDetail } from "./pages/AgentDetail";
 import { Projects } from "./pages/Projects";
@@ -198,27 +200,17 @@ function OnboardingRoutePage() {
 }
 
 function CompanyRootRedirect() {
-  const { companies, selectedCompany, loading } = useCompany();
-  const location = useLocation();
+  const { loading } = useCompany();
 
   if (loading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
+    return <RoboLoading />;
   }
 
-  const targetCompany = selectedCompany ?? companies[0] ?? null;
-  if (!targetCompany) {
-    if (
-      shouldRedirectCompanylessRouteToOnboarding({
-        pathname: location.pathname,
-        hasCompanies: false,
-      })
-    ) {
-      return <Navigate to="/onboarding" replace />;
-    }
-    return <NoCompaniesStartPage />;
-  }
-
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  // Always land on the instance-owner home so the owner can choose: open an
+  // existing tenant's dashboard, or add a new company (tenant). This replaces the
+  // old behaviour that silently dove into the first company OR — when there were
+  // none — forced the create-company wizard, leaving no place to manage tenants.
+  return <InstanceHome />;
 }
 
 function UnprefixedBoardRedirect() {
@@ -226,7 +218,7 @@ function UnprefixedBoardRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
 
   if (loading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
+    return <RoboLoading />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;

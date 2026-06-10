@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock3, ExternalLink, Settings } from "lucide-react";
-import type { InstanceSchedulerHeartbeatAgent } from "@paperclipai/shared";
+import type { InstanceSchedulerHeartbeatAgent } from "@valadrien-os/shared";
 import { Link } from "@/lib/router";
 import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
@@ -168,7 +168,7 @@ export function InstanceSettings() {
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Scheduler Heartbeats</h1>
+          <h1 className="font-serif text-lg font-medium">Scheduler Heartbeats</h1>
         </div>
         <p className="text-sm text-muted-foreground">
           Agents with a timer heartbeat enabled across all of your companies.
@@ -214,7 +214,7 @@ export function InstanceSettings() {
           {grouped.map((group) => (
             <Card key={group.companyName}>
               <CardContent className="p-0">
-                <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="border-b px-3 py-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                   {group.companyName}
                 </div>
                 <div className="divide-y">

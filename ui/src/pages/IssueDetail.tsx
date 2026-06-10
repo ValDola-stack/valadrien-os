@@ -154,7 +154,7 @@ import {
   type RequestConfirmationInteraction,
   type SuggestTasksInteraction,
   type IssueTreeControlMode,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 
 type CommentReassignment = IssueCommentReassignment;
 type ActionableIssueThreadInteraction = SuggestTasksInteraction | RequestConfirmationInteraction;
@@ -168,7 +168,7 @@ type IssueDetailComment = (IssueComment | OptimisticIssueComment) & {
   queueReason?: "hold" | "active_run" | "other";
 };
 
-const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
+const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://TODO_DOMAIN/tos";
 const ISSUE_COMMENT_PAGE_SIZE = 50;
 const ISSUE_COMMENT_AUTOLOAD_LIMIT = ISSUE_COMMENT_PAGE_SIZE * 3;
 const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
@@ -450,10 +450,10 @@ function IssueDetailLoadingState({
               <StatusIcon status={headerSeed.status} blockerAttention={headerSeed.blockerAttention} />
               <PriorityIcon priority={headerSeed.priority} />
               {identifier ? (
-                <span className="text-sm font-mono text-muted-foreground shrink-0">{identifier}</span>
+                <span className="text-sm font-mono tabular-nums text-muted-foreground shrink-0">{identifier}</span>
               ) : null}
               {headerSeed.originKind === "routine_execution" && headerSeed.originId ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 shrink-0">
+                <span className="inline-flex items-center gap-1 rounded-full border border-status-info/30 bg-status-info/10 px-2 py-0.5 text-[10px] font-medium text-status-info shrink-0">
                   <Repeat className="h-3 w-3" />
                   Routine
                 </span>
@@ -484,7 +484,7 @@ function IssueDetailLoadingState({
 
         {headerSeed ? (
           <>
-            <h2 className="text-xl font-bold leading-tight">{headerSeed.title}</h2>
+            <h2 className="font-serif text-2xl font-medium leading-tight tracking-tight">{headerSeed.title}</h2>
             <div className="space-y-2">
               <Skeleton className="h-4 w-full max-w-xl" />
               <Skeleton className="h-4 w-[72%]" />
@@ -1103,7 +1103,7 @@ function IssueDetailActivityTab({
     <>
       {shouldShowCostSummary && (
         <div className="mb-3 px-3 py-2 rounded-lg border border-border">
-          <div className="text-sm font-medium text-muted-foreground mb-1">Cost Summary</div>
+          <div className="mb-1 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Cost Summary</div>
           {!issueCostSummary.hasCost && !issueCostSummary.hasTokens && !hasIssueTreeCost ? (
             <div className="text-xs text-muted-foreground">No cost data yet.</div>
           ) : (
@@ -1184,7 +1184,7 @@ function IssueDetailActivityTab({
                   ) : null}
                   <ActorIdentity evt={evt} agentMap={agentMap} userProfileMap={userProfileMap} />
                   <span>{formatIssueActivityAction(evt.action, evt.details, { agentMap, userProfileMap, currentUserId })}</span>
-                  <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
+                  <span className="ml-auto shrink-0 font-mono tabular-nums">{relativeTime(evt.createdAt)}</span>
                 </div>
                 <IssueReferenceActivitySummary event={evt} />
               </div>
@@ -3079,7 +3079,7 @@ export function IssueDetail() {
   );
 
   if (isLoading) return <IssueDetailLoadingState headerSeed={issueHeaderSeed} />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <p className="text-sm text-status-error">{error.message}</p>;
   if (!issue) return null;
 
   // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
@@ -3254,20 +3254,20 @@ export function IssueDetail() {
         </div>
       )}
       {activePauseHold && (
-        <div className="rounded-md border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+        <div className="rounded-md border border-status-warning/35 bg-status-warning/10 p-3 text-sm text-status-warning">
           {activePauseHold.isRoot ? (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">
                   {childIssues.length === 0 ? "Paused by board." : "Subtree pause is active."}
                 </span>
-                <span className="text-xs text-amber-900/80 dark:text-amber-100/80">
+                <span className="text-xs text-status-warning/80">
                   {childIssues.length === 0
                     ? "Issue execution is held until resume. Human comments can still wake the assignee for triage."
                     : "Root and descendant execution is held until resume. Human comments can still wake assignees for triage."}
                 </span>
               </div>
-              <div className="text-xs text-amber-900/80 dark:text-amber-100/80">
+              <div className="text-xs text-status-warning/80">
                 {childIssues.length === 0
                   ? "1 issue held"
                   : `${heldDescendantCount} descendant${heldDescendantCount === 1 ? "" : "s"} held`}
@@ -3340,13 +3340,13 @@ export function IssueDetail() {
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
-          <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
+          <span className="text-sm font-mono tabular-nums text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
           {hasLiveRuns && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 shrink-0">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-status-running/10 border border-status-running/30 px-2 py-0.5 text-[10px] font-medium text-status-running shrink-0">
               <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-status-running opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-status-running" />
               </span>
               Live
             </span>
@@ -3355,7 +3355,7 @@ export function IssueDetail() {
           {issue.originKind === "routine_execution" && issue.originId && (
             <Link
               to={`/routines/${issue.originId}`}
-              className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 border border-violet-500/30 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 shrink-0 hover:bg-violet-500/20 transition-colors"
+              className="inline-flex items-center gap-1 rounded-full bg-status-info/10 border border-status-info/30 px-2 py-0.5 text-[10px] font-medium text-status-info shrink-0 hover:bg-status-info/20 transition-colors"
             >
               <Repeat className="h-3 w-3" />
               Routine
@@ -3368,7 +3368,7 @@ export function IssueDetail() {
 
           {issue.originKind === "issue_productivity_review" ? (
             <span
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 shrink-0"
+              className="inline-flex items-center gap-1 rounded-full border border-status-warning/40 bg-status-warning/10 px-2 py-0.5 text-[10px] font-medium text-status-warning shrink-0"
               title="This task is a productivity review."
             >
               <Eye className="h-3 w-3" />
@@ -3378,7 +3378,7 @@ export function IssueDetail() {
 
           {issue.workMode === "planning" ? (
             <span
-              className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 shrink-0"
+              className="inline-flex items-center rounded-full border border-status-warning/40 bg-status-warning/10 px-2 py-0.5 text-[10px] font-medium text-status-warning shrink-0"
               title="This issue is in planning mode."
             >
               Planning
@@ -3388,7 +3388,7 @@ export function IssueDetail() {
           {hasAssignedBacklogBlocker(issue.blockedBy) ? (
             <span
               data-testid="issue-detail-parked-blocker"
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300 shrink-0"
+              className="inline-flex items-center gap-1 rounded-full border border-status-warning/60 bg-status-warning/15 px-2 py-0.5 text-[10px] font-medium text-status-warning shrink-0"
               title="Blocked by parked work — at least one assigned blocker is in backlog and will not wake its assignee."
             >
               <Flag className="h-3 w-3" />
@@ -3440,7 +3440,7 @@ export function IssueDetail() {
                 onClick={copyIssueToClipboard}
                 title="Copy issue as markdown"
               >
-                {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                {copied ? <Check className="h-4 w-4 text-status-success" /> : <Copy className="h-4 w-4" />}
               </Button>
               <Button
                 variant="ghost"
@@ -3474,7 +3474,7 @@ export function IssueDetail() {
               onClick={copyIssueToClipboard}
               title="Copy issue as markdown"
             >
-              {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+              {copied ? <Check className="h-4 w-4 text-status-success" /> : <Copy className="h-4 w-4" />}
             </Button>
             <Button
               variant="ghost"
@@ -3615,7 +3615,7 @@ export function IssueDetail() {
           value={issue.title}
           onSave={(title) => updateIssue.mutateAsync({ title })}
           as="h2"
-          className="text-xl font-bold"
+          className="font-serif text-2xl font-medium leading-tight tracking-tight"
         />
 
         <InlineEditor
@@ -3681,7 +3681,7 @@ export function IssueDetail() {
       {showRichSubIssuesSection ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Sub-issues</h3>
+            <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Sub-issues</h3>
           </div>
           <IssuesList
             issues={childIssues}
@@ -3692,7 +3692,7 @@ export function IssueDetail() {
             mutedIssueIds={mutedChildIssueIds}
             issueBadgeById={childPauseBadgeById}
             projectId={issue.projectId ?? undefined}
-            viewStateKey={`paperclip:issue-detail:${issue.id}:subissues-view`}
+            viewStateKey={`valadrien-os:issue-detail:${issue.id}:subissues-view`}
             issueLinkState={resolvedIssueDetailState ?? location.state}
             searchFilters={{ descendantOf: issue.id, includeBlockedBy: true }}
             searchWithinLoadedIssues
@@ -3760,7 +3760,7 @@ export function IssueDetail() {
         onDrop={(evt) => void handleAttachmentDrop(evt)}
       >
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Attachments</h3>
+          <h3 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Attachments</h3>
           {attachmentUploadButton}
         </div>
 
@@ -3946,7 +3946,7 @@ export function IssueDetail() {
               currentUserId={currentUserId}
               userLabelMap={userLabelMap}
               userProfileMap={userProfileMap}
-              draftKey={`paperclip:issue-comment-draft:${issue.id}`}
+              draftKey={`valadrien-os:issue-comment-draft:${issue.id}`}
               reassignOptions={commentReassignOptions}
               currentAssigneeValue={actualAssigneeValue}
               suggestedAssigneeValue={suggestedAssigneeValue}
@@ -4126,7 +4126,7 @@ export function IssueDetail() {
                   {treePreviewWarnings.length > 0 ? (
                     <div className="space-y-1">
                       {treePreviewWarnings.map((warning) => (
-                        <p key={warning.code} className="text-xs text-amber-700 dark:text-amber-300">
+                        <p key={warning.code} className="text-xs text-status-warning">
                           {warning.message}
                         </p>
                       ))}

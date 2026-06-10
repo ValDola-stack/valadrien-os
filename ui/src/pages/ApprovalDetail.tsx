@@ -13,7 +13,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
-import type { ApprovalComment } from "@paperclipai/shared";
+import type { ApprovalComment } from "@valadrien-os/shared";
 import { MarkdownBody } from "../components/MarkdownBody";
 
 export function ApprovalDetail() {
@@ -173,16 +173,16 @@ export function ApprovalDetail() {
   return (
     <div className="space-y-6 max-w-3xl">
       {showApprovedBanner && (
-        <div className="border border-green-300 dark:border-green-700/40 bg-green-50 dark:bg-green-900/20 rounded-lg px-4 py-3 animate-in fade-in zoom-in-95 duration-300">
+        <div className="border border-status-success/30 bg-status-success/12 rounded-lg px-4 py-3 animate-in fade-in zoom-in-95 duration-300">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2">
               <div className="relative mt-0.5">
-                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-300" />
-                <Sparkles className="h-3 w-3 text-green-500 dark:text-green-200 absolute -right-2 -top-1 animate-pulse" />
+                <CheckCircle2 className="h-4 w-4 text-status-success" />
+                <Sparkles className="h-3 w-3 text-status-success absolute -right-2 -top-1 animate-pulse" />
               </div>
               <div>
-                <p className="text-sm text-green-800 dark:text-green-100 font-medium">Approval confirmed</p>
-                <p className="text-xs text-green-700 dark:text-green-200/90">
+                <p className="text-sm text-status-success font-medium">Approval confirmed</p>
+                <p className="text-xs text-status-success/90">
                   Requesting agent was notified to review this approval and linked issues.
                 </p>
               </div>
@@ -190,7 +190,7 @@ export function ApprovalDetail() {
             <Button
               size="sm"
               variant="outline"
-              className="border-green-400 dark:border-green-600/50 text-green-800 dark:text-green-100 hover:bg-green-100 dark:hover:bg-green-900/30"
+              className="border-status-success/40 text-status-success hover:bg-status-success/12"
               onClick={() => navigate(resolvedCta.to)}
             >
               {resolvedCta.label}
@@ -203,8 +203,8 @@ export function ApprovalDetail() {
           <div className="flex items-center gap-2">
             <TypeIcon className="h-5 w-5 text-muted-foreground shrink-0" />
             <div>
-              <h2 className="text-lg font-semibold">{approvalLabel(approval.type, approval.payload as Record<string, unknown> | null)}</h2>
-              <p className="text-xs text-muted-foreground font-mono">{approval.id}</p>
+              <h2 className="font-serif text-lg font-medium tracking-tight">{approvalLabel(approval.type, approval.payload as Record<string, unknown> | null)}</h2>
+              <p className="font-mono text-xs tabular-nums text-muted-foreground">{approval.id}</p>
             </div>
           </div>
           <StatusBadge status={approval.status} />
@@ -240,7 +240,7 @@ export function ApprovalDetail() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         {linkedIssues && linkedIssues.length > 0 && (
           <div className="pt-2 border-t border-border/60">
-            <p className="text-xs text-muted-foreground mb-1.5">Linked Issues</p>
+            <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Linked Issues</p>
             <div className="space-y-1.5">
               {linkedIssues.map((issue) => (
                 <Link
@@ -265,7 +265,6 @@ export function ApprovalDetail() {
             <>
               <Button
                 size="sm"
-                className="bg-green-700 hover:bg-green-600 text-white"
                 onClick={() => approveMutation.mutate()}
                 disabled={approveMutation.isPending}
               >
@@ -339,7 +338,7 @@ export function ApprovalDetail() {
                 ) : (
                   <Identity name="Board" size="sm" />
                 )}
-                <span className="text-xs text-muted-foreground">
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
                   {new Date(comment.createdAt).toLocaleString()}
                 </span>
               </div>

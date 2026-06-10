@@ -46,7 +46,48 @@ export type MigrationState =
     };
 
 export function createDb(url: string) {
-  const sql = postgres(url);
+  // Serverless (Vercel) instances are ephemeral and arrive in bursts (the SPA fires
+  // ~25 concurrent calls on load). postgres.js defaults to a pool of 10 PER INSTANCE,
+  // so a cold-start burst across a few Fluid instances — plus the persistent worker
+  // and the heartbeat scheduler — blows past the Supabase pooler's client cap and
+  // every request 500s with `EMAXCONNSESSION`. Cap connections hard on serverless and
+  // release them quickly so frozen instances don't keep holding pooler slots. The
+  // persistent (Railway) worker keeps the larger default pool.
+  const isServerless = !!process.env.VERCEL;
+  const usesTransactionPooler = /:6543(\/|\?|$)/.test(url) || /[?&]pgbouncer=true/i.test(url);
+  const sql = postgres(url, {
+    // Vercel FREEZES idle instances without closing their pooled connections, so each
+    // warm/frozen instance holds its pool against the Supabase pooler. With enough
+    // instances (churn from deploys + traffic bursts) the transaction pooler's client
+    // cap can fill → `EMAXCONN` → cold boots fail (`database_unreachable`) — which is
+    // why this was pinned to 1. But max:1 has ZERO redundancy: heavy list pages (Issues,
+    // Workspaces) fan out 6+ parallel company-scoped queries that then SERIALIZE on the
+    // single connection, and any `:6543` drop/stale-connection wedges the whole instance
+    // → 504. Allow a small pool (3) so the fan-out parallelizes and one bad connection
+    // doesn't stall the page. Still bounded: idle_timeout drains fast, max_lifetime
+    // recycles stale ones, and on Pro the pooler client cap is well above 3×instances at
+    // current traffic. (If EMAXCONN recurs under deploy churn, drop back to 1.)
+    max: isServerless ? 3 : 10,
+    idle_timeout: isServerless ? 10 : undefined,
+    max_lifetime: isServerless ? 60 * 5 : undefined,
+    // Fast-fail a slow/contended cold connect so the app gate can't hang ~30s on
+    // "LOADING…" (it then surfaces a coded RoboError + Retry). With the function now
+    // co-located in the DB's region (vercel.json regions: pdx1 ↔ Supabase us-west-2),
+    // a healthy connect is well under this.
+    connect_timeout: isServerless ? 10 : 30,
+    // connect_timeout only bounds the CONNECT. Once connected, a query stalling on a
+    // contended pooler had NO upper bound and could pin a serverless cold boot or a
+    // route to the function's 300s ceiling (→ 504 clusters on /api/health, companies,
+    // issues — the cold-boot-hang root cause). statement_timeout caps every query
+    // server-side; idle_in_transaction_session_timeout reclaims a stuck txn-held
+    // connection. 8s is far above warm latency (~200-400ms) yet fails fast under
+    // contention. Serverless only — the persistent worker runs long reconciles.
+    ...(isServerless
+      ? { connection: { statement_timeout: 8_000, idle_in_transaction_session_timeout: 8_000 } }
+      : {}),
+    // pgbouncer transaction mode (Supabase :6543) can't use prepared statements.
+    prepare: usesTransactionPooler ? false : undefined,
+  });
   return drizzlePg(sql, { schema });
 }
 

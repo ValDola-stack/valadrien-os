@@ -22,7 +22,7 @@ import type {
   RemoteSecretImportPreviewResult,
   RemoteSecretImportResult,
   RemoteSecretImportRowResult,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { ApiError } from "../../api/client";
 import {
   secretsApi,
@@ -98,10 +98,10 @@ function statusToneClasses(status: RemoteSecretImportCandidate["status"]) {
     case "duplicate":
       return "text-muted-foreground border-border/60";
     case "conflict":
-      return "text-amber-600 border-amber-500/40 dark:text-amber-400";
+      return "text-status-warning border-status-warning/40";
     case "ready":
     default:
-      return "text-emerald-600 border-emerald-500/40 dark:text-emerald-400";
+      return "text-status-success border-status-success/40";
   }
 }
 
@@ -142,7 +142,7 @@ function RowResultBadge({ status }: { status: RemoteSecretImportRowResult["statu
       return (
         <Badge
           variant="outline"
-          className="gap-1 px-1.5 py-0 font-normal text-emerald-600 border-emerald-500/40 dark:text-emerald-400"
+          className="gap-1 px-1.5 py-0 font-normal text-status-success border-status-success/40"
         >
           <CheckCircle2 className="h-3 w-3" /> Created
         </Badge>
@@ -277,10 +277,10 @@ function validateDraftRow(
 
   for (const existingSecret of existing) {
     if (existingSecret.name.trim().toLowerCase() === lowerName) {
-      return "A Paperclip secret already uses this name.";
+      return "A ValadrienOs secret already uses this name.";
     }
     if (existingSecret.key.trim().toLowerCase() === lowerKey) {
-      return "A Paperclip secret already uses this key.";
+      return "A ValadrienOs secret already uses this key.";
     }
   }
 
@@ -650,7 +650,7 @@ export function ImportFromVaultDialog({
               Import from AWS Secrets Manager
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Bring AWS-managed secrets into Paperclip as external references.
+              Bring AWS-managed secrets into ValadrienOs as external references.
             </DialogDescription>
             <Stepper step={step} />
           </div>
@@ -918,7 +918,7 @@ function SelectStep(props: SelectStepProps) {
                         <Badge variant="outline" className="px-1 py-0 text-[10px]">default</Badge>
                       )}
                       {vault.status === "warning" && (
-                        <Badge variant="outline" className="px-1 py-0 text-[10px] text-amber-500 border-amber-500/40">warning</Badge>
+                        <Badge variant="outline" className="px-1 py-0 text-[10px] text-status-warning border-status-warning/40">warning</Badge>
                       )}
                       {blocked && (
                         <Badge variant="outline" className="px-1 py-0 text-[10px] text-muted-foreground">
@@ -1059,7 +1059,7 @@ function SelectStep(props: SelectStepProps) {
                           )}
                       </div>
                       {candidate.status === "conflict" && candidate.conflicts.length > 0 && (
-                        <div className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                        <div className="mt-0.5 text-[11px] text-status-warning">
                           {candidate.conflicts[0].message}
                         </div>
                       )}
@@ -1207,7 +1207,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
       <div className="flex flex-wrap items-center gap-3 border-b border-border/60 bg-muted/20 px-5 py-3 text-xs">
         <span className="font-medium">{ready} secrets ready to import</span>
         {blocked > 0 && (
-          <span className="text-amber-600 dark:text-amber-400">
+          <span className="text-status-warning">
             {blocked} need attention before import
           </span>
         )}
@@ -1220,7 +1220,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
               key={draft.candidate.externalRef}
               className={cn(
                 "border-b border-border/60 p-4",
-                error && "border-l-2 border-l-amber-500/60 bg-amber-500/5",
+                error && "border-l-2 border-l-status-warning/60 bg-status-warning/5",
               )}
               data-testid={`review-row-${draft.candidate.externalRef}`}
             >
@@ -1237,7 +1237,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <label className="flex flex-col gap-1 text-xs">
-                      <span className="text-muted-foreground">Paperclip name</span>
+                      <span className="text-muted-foreground">ValadrienOs name</span>
                       <Input
                         value={draft.name}
                         onChange={(e) =>
@@ -1284,7 +1284,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
                   </div>
                   {error && (
                     <div
-                      className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+                      className="flex items-center gap-1.5 text-xs text-status-warning"
                       role="alert"
                       data-testid={`review-error-${draft.candidate.externalRef}`}
                     >
@@ -1348,7 +1348,7 @@ function ResultStep({ result, draftList }: ResultStepProps) {
       <div className="border-b border-border/60 px-5 py-3" data-testid="result-summary">
         <h3 className="text-sm font-semibold">{heading}</h3>
         <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span className="text-emerald-600 dark:text-emerald-400">✓ {result.importedCount} created</span>
+          <span className="text-status-success">✓ {result.importedCount} created</span>
           <span>⊘ {result.skippedCount} skipped</span>
           <span className="text-destructive">⨯ {result.errorCount} failed</span>
         </div>
@@ -1457,7 +1457,7 @@ function FooterStatus({
       <div className="text-xs text-muted-foreground">
         {readyReviewCount} ready
         {blockedReviewCount > 0 && (
-          <span className="ml-2 text-amber-600 dark:text-amber-400">
+          <span className="ml-2 text-status-warning">
             · {blockedReviewCount} blocked
           </span>
         )}

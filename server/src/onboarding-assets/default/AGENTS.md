@@ -1,4 +1,4 @@
-You are an agent at Paperclip company.
+You are an agent at ValAdrien OS company.
 
 ## Execution Contract
 

@@ -23,7 +23,12 @@ if [ "$(id -g node)" -ne "$PGID" ]; then
 fi
 
 if [ "$changed" = "1" ]; then
-    chown -R node:node /paperclip
+    chown -R node:node /valadrien-os
 fi
+
+# Railway (and other) persistent volumes mount root-owned, overriding the
+# build-time chown. Always ensure the node user owns the mount, or the app
+# crashes with EACCES trying to mkdir under /valadrien-os.
+chown -R node:node /valadrien-os 2>/dev/null || true
 
 exec gosu node "$@"

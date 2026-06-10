@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import type { Project } from "@valadrien-os/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
 import { environmentsApi } from "../api/environments";
@@ -67,7 +67,7 @@ function SaveIndicator({ state }: { state: ProjectFieldSaveState }) {
   }
   if (state === "saved") {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-green-600 dark:text-green-400">
+      <span className="inline-flex items-center gap-1 text-[11px] text-status-success">
         <Check className="h-3 w-3" />
         Saved
       </span>
@@ -672,7 +672,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           </div>
           <div className="space-y-2 rounded-md border border-border/70 p-3">
             <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Repo</div>
+              <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Repo</div>
               {codebase.repoUrl ? (
                 <div className="flex items-center justify-between gap-2">
                   {isSafeExternalUrl(codebase.repoUrl) ? (
@@ -735,14 +735,14 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             </div>
 
             <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Local folder</div>
+              <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Local folder</div>
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 space-y-1">
                   <div className="min-w-0 break-all font-mono text-xs text-muted-foreground">
                     {codebase.effectiveLocalFolder}
                   </div>
                   {codebase.origin === "managed_checkout" && (
-                    <div className="text-[11px] text-muted-foreground">Paperclip-managed folder.</div>
+                    <div className="text-[11px] text-muted-foreground">ValadrienOs-managed folder.</div>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
@@ -774,7 +774,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
             {hasAdditionalLegacyWorkspaces && (
               <div className="text-[11px] text-muted-foreground">
-                Additional legacy workspace records exist on this project. Paperclip is using the primary workspace as the codebase view.
+                Additional legacy workspace records exist on this project. ValadrienOs is using the primary workspace as the codebase view.
               </div>
             )}
 
@@ -792,9 +792,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                           className={cn(
                             "rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide",
                             service.status === "running"
-                              ? "bg-green-500/15 text-green-700 dark:text-green-300"
+                              ? "bg-status-running/15 text-status-running"
                               : service.status === "failed"
-                                ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                                ? "bg-status-error/15 text-status-error"
                                 : "bg-muted text-muted-foreground",
                           )}
                         >
@@ -1097,7 +1097,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                               })}
                             immediate
                             className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
-                            placeholder=".paperclip/worktrees"
+                            placeholder=".valadrien-os/worktrees"
                           />
                         </div>
                         <div>
@@ -1167,7 +1167,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
         <>
           <Separator className="my-4" />
           <div className="space-y-4 py-4">
-            <div className="text-xs font-medium text-destructive uppercase tracking-wide">
+            <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-status-error">
               Danger Zone
             </div>
             <ArchiveDangerZone

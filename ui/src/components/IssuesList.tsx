@@ -74,7 +74,7 @@ import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
 import { statusBadge } from "../lib/status-colors";
 import { workflowSort } from "../lib/workflow-sort";
 import { isSuccessfulRunHandoffRequired } from "../lib/successful-run-handoff";
-import { ISSUE_STATUSES, type Issue, type IssueStatus, type Project } from "@paperclipai/shared";
+import { ISSUE_STATUSES, type Issue, type IssueStatus, type Project } from "@valadrien-os/shared";
 const ISSUE_SEARCH_DEBOUNCE_MS = 250;
 const ISSUE_SEARCH_RESULT_LIMIT = 200;
 const ISSUE_BOARD_COLUMN_RESULT_LIMIT = 200;
@@ -106,12 +106,12 @@ const issueStatusLabels: Record<IssueStatus, string> = {
 };
 const progressSegmentClasses: Record<IssueStatus, string> = {
   backlog: "bg-muted-foreground/40",
-  todo: "bg-blue-500",
-  in_progress: "bg-yellow-500",
-  in_review: "bg-violet-500",
-  done: "bg-green-500",
-  blocked: "bg-red-500",
-  cancelled: "bg-neutral-400",
+  todo: "bg-status-info",
+  in_progress: "bg-status-running",
+  in_review: "bg-status-warning",
+  done: "bg-status-success",
+  blocked: "bg-status-error",
+  cancelled: "bg-muted-foreground/40",
 };
 
 /* ── View state ── */
@@ -1334,7 +1334,7 @@ export function IssuesList({
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button size="sm" variant="outline" onClick={() => openCreateIssueDialog()}>
+          <Button size="sm" onClick={() => openCreateIssueDialog()}>
             <Plus className="h-4 w-4 sm:mr-1" />
             <span className="hidden sm:inline">{createButtonLabel}</span>
           </Button>
@@ -1715,7 +1715,7 @@ export function IssuesList({
                         target.scrollIntoView({ behavior: "smooth", block: "nearest" });
                         target.focus?.();
                       }}
-                      className="inline-flex items-center rounded-full border border-amber-400/45 bg-amber-50/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-100/80 dark:border-amber-300/35 dark:bg-amber-400/10 dark:text-amber-300"
+                      className="inline-flex items-center rounded-full border border-status-warning/40 bg-status-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-status-warning transition-colors hover:bg-status-warning/20"
                       title={firstVisibleBlockerTitle}
                       aria-label={firstVisibleBlockerTitle}
                     >
@@ -1762,14 +1762,14 @@ export function IssuesList({
                                   Paused
                                 </span>
                               ) : (
-                                <span className="ml-1.5 inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                                <span className="ml-1.5 inline-flex items-center rounded-full border border-status-warning/40 bg-status-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-status-warning">
                                   {issueBadge}
                                 </span>
                               )
                             ) : null}
                             {isSuccessfulRunHandoffRequired(issue) ? (
                               <span
-                                className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-amber-400/45 bg-amber-50/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-300/35 dark:bg-amber-400/10 dark:text-amber-300"
+                                className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-status-warning/40 bg-status-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-status-warning"
                                 aria-label="Needs next step"
                                 title="This issue needs a next step"
                               >

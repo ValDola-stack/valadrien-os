@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { INBOX_MINE_ISSUE_STATUS_FILTER } from "@paperclipai/shared";
+import { INBOX_MINE_ISSUE_STATUS_FILTER } from "@valadrien-os/shared";
 import { approvalsApi } from "../api/approvals";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
@@ -107,7 +107,7 @@ const INBOX_HEARTBEAT_RUN_LIMIT = 200;
 const INBOX_ISSUE_LIST_LIMIT = 500;
 import { Input } from "@/components/ui/input";
 import { PageTabBar } from "../components/PageTabBar";
-import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
+import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@valadrien-os/shared";
 import {
   ACTIONABLE_APPROVAL_STATUSES,
   DEFAULT_INBOX_ISSUE_COLUMNS,
@@ -284,13 +284,13 @@ export function FailedRunInboxRow({
                 onClick={onMarkRead}
                 className={cn(
                   "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                  "hover:bg-blue-500/20",
+                  "hover:bg-primary/20",
                 )}
                 aria-label="Mark as read"
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
-                  "bg-blue-600 dark:bg-blue-400",
+                  "bg-primary",
                   unreadState === "fading" ? "opacity-0" : "opacity-100",
                 )} />
               </button>
@@ -318,8 +318,8 @@ export function FailedRunInboxRow({
         >
           {!showUnreadSlot && <span className="hidden h-2 w-2 shrink-0 sm:inline-flex" aria-hidden="true" />}
           <span className="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true" />
-          <span className="mt-0.5 shrink-0 rounded-md bg-red-500/20 p-1.5 sm:mt-0">
-            <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+          <span className="mt-0.5 shrink-0 rounded-md bg-status-error/15 p-1.5 sm:mt-0">
+            <XCircle className="h-4 w-4 text-status-error" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="line-clamp-2 text-sm font-medium sm:truncate sm:line-clamp-none">
@@ -440,13 +440,13 @@ function ApprovalInboxRow({
                 onClick={onMarkRead}
                 className={cn(
                   "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                  "hover:bg-blue-500/20",
+                  "hover:bg-primary/20",
                 )}
                 aria-label="Mark as read"
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
-                  "bg-blue-600 dark:bg-blue-400",
+                  "bg-primary",
                   unreadState === "fading" ? "opacity-0" : "opacity-100",
                 )} />
               </button>
@@ -492,7 +492,7 @@ function ApprovalInboxRow({
           <div className="hidden shrink-0 items-center gap-2 sm:flex">
             <Button
               size="sm"
-              className="h-8 bg-green-700 px-3 text-white hover:bg-green-600"
+              className="h-8 bg-primary px-3 text-primary-foreground hover:bg-primary/90"
               onClick={onApprove}
               disabled={isPending}
             >
@@ -514,7 +514,7 @@ function ApprovalInboxRow({
         <div className="mt-3 flex gap-2 sm:hidden">
           <Button
             size="sm"
-            className="h-8 bg-green-700 px-3 text-white hover:bg-green-600"
+            className="h-8 bg-primary px-3 text-primary-foreground hover:bg-primary/90"
             onClick={onApprove}
             disabled={isPending}
           >
@@ -576,13 +576,13 @@ function JoinRequestInboxRow({
                 onClick={onMarkRead}
                 className={cn(
                   "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                  "hover:bg-blue-500/20",
+                  "hover:bg-primary/20",
                 )}
                 aria-label="Mark as read"
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
-                  "bg-blue-600 dark:bg-blue-400",
+                  "bg-primary",
                   unreadState === "fading" ? "opacity-0" : "opacity-100",
                 )} />
               </button>
@@ -620,7 +620,7 @@ function JoinRequestInboxRow({
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           <Button
             size="sm"
-            className="h-8 bg-green-700 px-3 text-white hover:bg-green-600"
+            className="h-8 bg-primary px-3 text-primary-foreground hover:bg-primary/90"
             onClick={onApprove}
             disabled={isPending}
           >
@@ -640,7 +640,7 @@ function JoinRequestInboxRow({
       <div className="mt-3 flex gap-2 sm:hidden">
         <Button
           size="sm"
-          className="h-8 bg-green-700 px-3 text-white hover:bg-green-600"
+          className="h-8 bg-primary px-3 text-primary-foreground hover:bg-primary/90"
           onClick={onApprove}
           disabled={isPending}
         >
@@ -1916,8 +1916,49 @@ export function Inbox() {
   const canMarkAllRead = unreadIssueIds.length > 0;
   const activeIssueFilterCount = countActiveIssueFilters(issueFilters, true);
   const showGeneralIssueToolbarControls = tab !== "blocked";
+  const unreadCount = unreadIssueIds.length;
+  const pendingApprovalsCount = approvalsToRender.filter((approval) =>
+    ACTIONABLE_APPROVAL_STATUSES.has(approval.status),
+  ).length;
+  const failedRunsCount = failedRuns.length;
   return (
     <div className="space-y-6">
+      {/* Control-room masthead — frames the inbox as a living triage surface. */}
+      <div>
+        <h1 className="font-serif text-2xl font-medium tracking-tight">Inbox</h1>
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              unreadCount > 0 ? "bg-status-running" : "bg-muted-foreground/50",
+            )} />
+            <span className="font-mono text-foreground">{unreadCount}</span> unread
+          </span>
+          <span className="text-muted-foreground/50">·</span>
+          <span>
+            <span className="font-mono text-foreground">{totalVisibleWorkItems}</span> in inbox
+          </span>
+          {pendingApprovalsCount > 0 && (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-status-warning" />
+                <span className="font-mono text-foreground">{pendingApprovalsCount}</span> awaiting approval
+              </span>
+            </>
+          )}
+          {failedRunsCount > 0 && (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-status-error" />
+                <span className="font-mono text-foreground">{failedRunsCount}</span> failed run{failedRunsCount === 1 ? "" : "s"}
+              </span>
+            </>
+          )}
+        </p>
+      </div>
+
       <div className="space-y-2">
         {/* Search — full-width row on mobile, inline on desktop */}
         <div className="relative sm:hidden">
@@ -2417,7 +2458,7 @@ export function Inbox() {
                         className="flex items-center gap-3 border-y border-border/70 bg-muted/30 px-4 py-2"
                       >
                         <div className="h-px flex-1 bg-border/80" />
-                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <span className="shrink-0 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           {group.searchSection === "archived" ? "Archived" : "Other results"}
                         </span>
                         <div className="h-px flex-1 bg-border/80" />
@@ -2494,8 +2535,8 @@ export function Inbox() {
                     if (showTodayDivider) {
                       elements.push(
                         <div key={`today-divider-${group.key}-${index}`} className="my-2 flex items-center gap-3 px-4">
-                          <div className="flex-1 border-t border-zinc-600" />
-                          <span className="shrink-0 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+                          <div className="flex-1 border-t border-border" />
+                          <span className="shrink-0 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                             Earlier
                           </span>
                         </div>,
@@ -2710,9 +2751,10 @@ export function Inbox() {
         <>
           {showSeparatorBefore("alerts") && <Separator />}
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="mb-3 flex items-center gap-3 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               Alerts
-            </h3>
+              <span className="h-px flex-1 bg-border/70" />
+            </div>
             <div className="divide-y divide-border border border-border">
               {showAggregateAgentError && (
                 <div className="group/alert relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50">
@@ -2720,7 +2762,7 @@ export function Inbox() {
                     to="/agents"
                     className="flex flex-1 cursor-pointer items-center gap-3 no-underline text-inherit"
                   >
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-status-error" />
                     <span className="text-sm">
                       <span className="font-medium">{dashboard!.agents.error}</span>{" "}
                       {dashboard!.agents.error === 1 ? "agent has" : "agents have"} errors
@@ -2742,7 +2784,7 @@ export function Inbox() {
                     to="/costs"
                     className="flex flex-1 cursor-pointer items-center gap-3 no-underline text-inherit"
                   >
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-status-warning" />
                     <span className="text-sm">
                       Budget at{" "}
                       <span className="font-medium">{dashboard!.costs.monthUtilizationPercent}%</span>{" "}

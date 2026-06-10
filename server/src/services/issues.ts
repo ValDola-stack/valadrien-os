@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { and, asc, desc, eq, gt, inArray, isNull, like, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@valadrien-os/db";
 import {
   activityLog,
   agentWakeupRequests,
@@ -27,7 +27,7 @@ import {
   labels,
   projectWorkspaces,
   projects,
-} from "@paperclipai/db";
+} from "@valadrien-os/db";
 import type {
   IssueCommentAuthorType,
   IssueCommentMetadata,
@@ -39,7 +39,7 @@ import type {
   IssueProductivityReviewTrigger,
   IssueRelationIssueSummary,
   SuccessfulRunHandoffState,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import {
   clampIssueRequestDepth,
   extractAgentMentionIds,
@@ -49,7 +49,7 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { parseObject } from "../adapters/utils.js";
@@ -684,9 +684,9 @@ function inboxVisibleForUserCondition(companyId: string, userId: string) {
 }
 
 const LEGACY_PLUGIN_OPERATION_ORIGIN_KINDS = [
-  "plugin:paperclipai.content-machine:case",
-  "plugin:paperclipai.content-machine:evaluation",
-  "plugin:paperclipai.content-machine:source-sync",
+  "plugin:valadrien-os.content-machine:case",
+  "plugin:valadrien-os.content-machine:evaluation",
+  "plugin:valadrien-os.content-machine:source-sync",
 ] as const;
 
 function nonPluginOperationIssueCondition() {
@@ -4567,6 +4567,61 @@ export function issueService(db: Db) {
           }
         }
         const [enriched] = await withIssueLabels(tx, [updated]);
+        // Auto-unblock dependents: when this issue just became terminal
+        // (done/cancelled), any issue it was blocking whose blockers are now ALL
+        // resolved should leave the `blocked` holding status so the worker can pick
+        // it up. Without this, dependents stay stuck in `blocked` even though their
+        // dependencies cleared, and the chain stalls until someone manually flips
+        // them to `todo`. Scoped to issues THIS one blocks; only flips ones still
+        // `blocked` with zero unresolved blockers. Target `todo` is non-terminal, so
+        // it can't recurse into this branch.
+        if (
+          (issueData.status === "done" || issueData.status === "cancelled") &&
+          existing.status !== issueData.status
+        ) {
+          const dependentRows: Array<{ id: string }> = await tx
+            .select({ id: issueRelations.relatedIssueId })
+            .from(issueRelations)
+            .where(
+              and(
+                eq(issueRelations.companyId, existing.companyId),
+                eq(issueRelations.issueId, id),
+                eq(issueRelations.type, "blocks"),
+              ),
+            );
+          const dependentIds = [...new Set(dependentRows.map((r) => r.id))];
+          if (dependentIds.length > 0) {
+            const blockedDependents: Array<{ id: string }> = await tx
+              .select({ id: issues.id })
+              .from(issues)
+              .where(
+                and(
+                  eq(issues.companyId, existing.companyId),
+                  inArray(issues.id, dependentIds),
+                  eq(issues.status, "blocked"),
+                ),
+              );
+            const blockedIds = blockedDependents.map((r) => r.id);
+            if (blockedIds.length > 0) {
+              const readiness = await listIssueDependencyReadinessMap(tx, existing.companyId, blockedIds);
+              const toUnblock = blockedIds.filter(
+                (bid) => (readiness.get(bid)?.unresolvedBlockerCount ?? 0) === 0,
+              );
+              if (toUnblock.length > 0) {
+                await tx
+                  .update(issues)
+                  .set({ status: "todo", updatedAt: new Date() })
+                  .where(
+                    and(
+                      eq(issues.companyId, existing.companyId),
+                      inArray(issues.id, toUnblock),
+                      eq(issues.status, "blocked"),
+                    ),
+                  );
+              }
+            }
+          }
+        }
         if (
           (issueData.status === "done" || issueData.status === "cancelled") &&
           existing.status !== issueData.status &&

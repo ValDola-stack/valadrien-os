@@ -1,4 +1,4 @@
-export type { Company } from "./company.js";
+export type { Company, CompanyInfraEntitlement } from "./company.js";
 export type {
   Environment,
   EnvironmentLease,
@@ -407,7 +407,7 @@ export type {
   PluginDatabaseDeclaration,
   PluginApiRouteCompanyResolution,
   PluginApiRouteDeclaration,
-  PaperclipPluginManifestV1,
+  ValadrienOsPluginManifestV1,
   PluginRecord,
   PluginDatabaseNamespaceRecord,
   PluginMigrationRecord,

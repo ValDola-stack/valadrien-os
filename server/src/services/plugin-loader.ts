@@ -4,8 +4,8 @@
  * This service is the entry point for the plugin system's I/O boundary:
  *
  * 1. **Discovery** — Scans the local plugin directory
- *    (`~/.paperclip/plugins/`) and `node_modules` for packages matching
- *    the `paperclip-plugin-*` naming convention. Aggregates results with
+ *    (`~/.valadrien-os/plugins/`) and `node_modules` for packages matching
+ *    the `valadrien-os-plugin-*` naming convention. Aggregates results with
  *    path-based deduplication.
  *
  * 2. **Installation** — `installPlugin()` downloads from npm (or reads a
@@ -27,17 +27,18 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@valadrien-os/db";
 import type {
-  PaperclipPluginManifestV1,
+  ValadrienOsPluginManifestV1,
   PluginLauncherDeclaration,
   PluginRecord,
   PluginUiSlotDeclaration,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { logger } from "../middleware/logger.js";
 import { pluginManifestValidator } from "./plugin-manifest-validator.js";
 import { pluginCapabilityValidator } from "./plugin-capability-validator.js";
@@ -58,12 +59,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ---------------------------------------------------------------------------
 
 /**
- * Naming convention for npm-published Paperclip plugins.
- * Packages matching this pattern are considered Paperclip plugins.
+ * Naming convention for npm-published ValadrienOs plugins.
+ * Packages matching this pattern are considered ValadrienOs plugins.
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
-export const NPM_PLUGIN_PACKAGE_PREFIX = "paperclip-plugin-";
+export const NPM_PLUGIN_PACKAGE_PREFIX = "valadrien-os-plugin-";
 
 /**
  * Default local plugin directory.  The loader scans this directory for
@@ -73,7 +74,7 @@ export const NPM_PLUGIN_PACKAGE_PREFIX = "paperclip-plugin-";
  */
 export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
   os.homedir(),
-  ".paperclip",
+  ".valadrien-os",
   "plugins",
 );
 
@@ -88,14 +89,14 @@ const ADAPTER_ENV_PASSTHROUGH = [
 ];
 
 export function buildPluginWorkerEnv(input: {
-  manifest: Pick<PaperclipPluginManifestV1, "capabilities">;
+  manifest: Pick<ValadrienOsPluginManifestV1, "capabilities">;
   instanceInfo: { deploymentMode?: string | null; deploymentExposure?: string | null };
   processEnv?: NodeJS.ProcessEnv;
 }): Record<string, string> {
   const processEnv = input.processEnv ?? process.env;
   const env: Record<string, string> = {
-    PAPERCLIP_DEPLOYMENT_MODE: input.instanceInfo.deploymentMode ?? "",
-    PAPERCLIP_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
+    VALADRIEN_OS_DEPLOYMENT_MODE: input.instanceInfo.deploymentMode ?? "",
+    VALADRIEN_OS_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
   };
   const canRegisterEnvironmentDrivers = Array.isArray(input.manifest.capabilities)
     && input.manifest.capabilities.includes("environment.drivers.register");
@@ -127,7 +128,7 @@ export interface DiscoveredPlugin {
   /** Source that found this package. */
   source: PluginSource;
   /** The parsed and validated manifest if available, null if discovery-only. */
-  manifest: PaperclipPluginManifestV1 | null;
+  manifest: ValadrienOsPluginManifestV1 | null;
 }
 
 /**
@@ -136,8 +137,8 @@ export interface DiscoveredPlugin {
  * @see PLUGIN_SPEC.md §8.1 — On-Disk Layout
  */
 export type PluginSource =
-  | "local-filesystem"  // ~/.paperclip/plugins/ local directory
-  | "npm"               // npm packages matching paperclip-plugin-* convention
+  | "local-filesystem"  // ~/.valadrien-os/plugins/ local directory
+  | "npm"               // npm packages matching valadrien-os-plugin-* convention
   | "registry";         // future: remote plugin registry URL
 
 type ParsedSemver = {
@@ -159,7 +160,7 @@ export interface PluginDiscoveryResult {
   sources: PluginSource[];
 }
 
-function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[] {
+function getDeclaredPageRoutePaths(manifest: ValadrienOsPluginManifestV1): string[] {
   return (manifest.ui?.slots ?? [])
     .filter((slot): slot is PluginUiSlotDeclaration => slot.type === "page" && typeof slot.routePath === "string" && slot.routePath.length > 0)
     .map((slot) => slot.routePath!);
@@ -175,7 +176,7 @@ function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[
 export interface PluginLoaderOptions {
   /**
    * Path to the local plugin directory to scan.
-   * Defaults to ~/.paperclip/plugins/
+   * Defaults to ~/.valadrien-os/plugins/
    */
   localPluginDir?: string;
 
@@ -189,7 +190,7 @@ export interface PluginLoaderOptions {
   enableLocalFilesystem?: boolean;
 
   /**
-   * Whether to discover installed npm packages matching the paperclip-plugin-*
+   * Whether to discover installed npm packages matching the valadrien-os-plugin-*
    * naming convention.
    * Defaults to true.
    */
@@ -212,7 +213,7 @@ export interface PluginLoaderOptions {
  */
 export interface PluginInstallOptions {
   /**
-   * npm package name to install (e.g. "paperclip-plugin-linear" or "@acme/plugin-linear").
+   * npm package name to install (e.g. "valadrien-os-plugin-linear" or "@acme/plugin-linear").
    * Either packageName or localPath must be set.
    */
   packageName?: string;
@@ -271,7 +272,7 @@ export interface PluginRuntimeServices {
    * events.emit, config.get). Each plugin gets its own set of handlers
    * scoped to its capabilities and plugin ID.
    */
-  buildHostHandlers: (pluginId: string, manifest: PaperclipPluginManifestV1) => WorkerToHostHandlers;
+  buildHostHandlers: (pluginId: string, manifest: ValadrienOsPluginManifestV1) => WorkerToHostHandlers;
   /**
    * Host instance information passed to the worker during initialization.
    * Includes the instance ID and host version.
@@ -373,8 +374,8 @@ export interface PluginLoader {
   discoverFromLocalFilesystem(dir?: string): Promise<PluginDiscoveryResult>;
 
   /**
-   * Discover Paperclip plugins installed as npm packages in the current
-   * Node.js environment matching the "paperclip-plugin-*" naming convention.
+   * Discover ValadrienOs plugins installed as npm packages in the current
+   * Node.js environment matching the "valadrien-os-plugin-*" naming convention.
    *
    * Looks for packages in node_modules that match the naming convention.
    *
@@ -386,15 +387,15 @@ export interface PluginLoader {
    * Load and parse the plugin manifest from a package directory.
    *
    * Reads the package.json, finds the manifest entrypoint declared under
-   * the "paperclipPlugin.manifest" key, loads the manifest module, and
+   * the "valadrienOsPlugin.manifest" key, loads the manifest module, and
    * validates it against the plugin manifest schema.
    *
-   * Returns null if the package is not a Paperclip plugin.
-   * Throws if the package is a Paperclip plugin but the manifest is invalid.
+   * Returns null if the package is not a ValadrienOs plugin.
+   * Throws if the package is a ValadrienOs plugin but the manifest is invalid.
    *
    * @see PLUGIN_SPEC.md §10 — Package Contract
    */
-  loadManifest(packagePath: string): Promise<PaperclipPluginManifestV1 | null>;
+  loadManifest(packagePath: string): Promise<ValadrienOsPluginManifestV1 | null>;
 
   /**
    * Install a plugin package and register it in the database.
@@ -427,8 +428,8 @@ export interface PluginLoader {
    * @see PLUGIN_SPEC.md §25.3 — Upgrade Lifecycle
    */
   upgradePlugin(pluginId: string, options: Omit<PluginInstallOptions, "installDir">): Promise<{
-    oldManifest: PaperclipPluginManifestV1;
-    newManifest: PaperclipPluginManifestV1;
+    oldManifest: ValadrienOsPluginManifestV1;
+    newManifest: ValadrienOsPluginManifestV1;
     discovered: DiscoveredPlugin;
   }>;
 
@@ -537,14 +538,14 @@ export interface PluginLoader {
 // ---------------------------------------------------------------------------
 
 /**
- * Check whether a package name matches the Paperclip plugin naming convention.
- * Accepts both the "paperclip-plugin-" prefix and scoped "@scope/plugin-" packages.
+ * Check whether a package name matches the ValadrienOs plugin naming convention.
+ * Accepts both the "valadrien-os-plugin-" prefix and scoped "@scope/plugin-" packages.
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
 export function isPluginPackageName(name: string): boolean {
   if (name.startsWith(NPM_PLUGIN_PACKAGE_PREFIX)) return true;
-  // Also accept scoped packages like @acme/plugin-linear or @paperclipai/plugin-*
+  // Also accept scoped packages like @acme/plugin-linear or @valadrien-os/plugin-*
   if (name.includes("/")) {
     const localPart = name.split("/")[1] ?? "";
     return localPart.startsWith("plugin-");
@@ -573,7 +574,7 @@ async function readPackageJson(
 /**
  * Resolve the manifest entrypoint from a package.json and package root.
  *
- * The spec defines a "paperclipPlugin" key in package.json with a "manifest"
+ * The spec defines a "valadrienOsPlugin" key in package.json with a "manifest"
  * subkey pointing to the manifest module.  This helper resolves the path.
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
@@ -582,13 +583,13 @@ function resolveManifestPath(
   packageRoot: string,
   pkgJson: Record<string, unknown>,
 ): string | null {
-  const paperclipPlugin = pkgJson["paperclipPlugin"];
+  const valadrienOsPlugin = pkgJson["valadrienOsPlugin"];
   if (
-    paperclipPlugin !== null &&
-    typeof paperclipPlugin === "object" &&
-    !Array.isArray(paperclipPlugin)
+    valadrienOsPlugin !== null &&
+    typeof valadrienOsPlugin === "object" &&
+    !Array.isArray(valadrienOsPlugin)
   ) {
-    const manifestRelPath = (paperclipPlugin as Record<string, unknown>)[
+    const manifestRelPath = (valadrienOsPlugin as Record<string, unknown>)[
       "manifest"
     ];
     if (typeof manifestRelPath === "string") {
@@ -676,8 +677,8 @@ function compareSemver(left: string, right: string): number {
   return 0;
 }
 
-function getMinimumHostVersion(manifest: PaperclipPluginManifestV1): string | undefined {
-  return manifest.minimumHostVersion ?? manifest.minimumPaperclipVersion;
+function getMinimumHostVersion(manifest: ValadrienOsPluginManifestV1): string | undefined {
+  return manifest.minimumHostVersion ?? manifest.minimumValadrienOsVersion;
 }
 
 /**
@@ -688,7 +689,7 @@ function getMinimumHostVersion(manifest: PaperclipPluginManifestV1): string | un
  * `launchers` field and the preferred `ui.launchers` field.
  */
 export function getPluginUiContributionMetadata(
-  manifest: PaperclipPluginManifestV1,
+  manifest: ValadrienOsPluginManifestV1,
 ): PluginUiContributionMetadata | null {
   const slots = manifest.ui?.slots ?? [];
   const launchers = [
@@ -732,7 +733,7 @@ export function getPluginUiContributionMetadata(
  *
  * // Install a specific plugin
  * const discovered = await loader.installPlugin({
- *   packageName: "paperclip-plugin-linear",
+ *   packageName: "valadrien-os-plugin-linear",
  *   version: "^1.0.0",
  * });
  * ```
@@ -783,7 +784,7 @@ export function pluginLoader(
   const log = logger.child({ service: "plugin-loader" });
   const hostVersion = runtimeServices?.instanceInfo.hostVersion;
 
-  async function assertPageRoutePathsAvailable(manifest: PaperclipPluginManifestV1): Promise<void> {
+  async function assertPageRoutePathsAvailable(manifest: ValadrienOsPluginManifestV1): Promise<void> {
     const requestedRoutePaths = getDeclaredPageRoutePaths(manifest);
     if (requestedRoutePaths.length === 0) return;
 
@@ -795,7 +796,7 @@ export function pluginLoader(
     const installedPlugins = await registry.listInstalled();
     for (const plugin of installedPlugins) {
       if (plugin.pluginKey === manifest.id) continue;
-      const installedManifest = plugin.manifestJson as PaperclipPluginManifestV1 | null;
+      const installedManifest = plugin.manifestJson as ValadrienOsPluginManifestV1 | null;
       if (!installedManifest) continue;
       const installedRoutePaths = new Set(getDeclaredPageRoutePaths(installedManifest));
       const conflictingRoute = requestedRoutePaths.find((routePath) => installedRoutePaths.has(routePath));
@@ -906,7 +907,7 @@ export function pluginLoader(
     const manifestPath = resolveManifestPath(resolvedPackagePath, pkgJson);
     if (!manifestPath || !existsSync(manifestPath)) {
       throw new Error(
-        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a Paperclip plugin (no manifest found).`,
+        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a ValadrienOs plugin (no manifest found).`,
       );
     }
 
@@ -957,20 +958,33 @@ export function pluginLoader(
   /**
    * Attempt to load and validate a plugin manifest from a resolved path.
    * Returns the manifest on success or throws with a descriptive error.
+   *
+   * Uses `createRequire` (with require-cache invalidation for hot-reload)
+   * rather than dynamic `import()` because Vitest's underlying Vite loader
+   * intercepts dynamic imports and refuses to resolve files outside the
+   * project tree (e.g. plugin packages installed in `~/.valadrien-os/plugins/`
+   * or in /tmp during integration tests). Node 22.12+ supports requiring
+   * synchronous ESM modules, which is the only shape valid plugin manifests
+   * take (they must be pure data — no top-level await, no async side effects).
    */
   async function loadManifestFromPath(
     manifestPath: string,
-  ): Promise<PaperclipPluginManifestV1> {
+  ): Promise<ValadrienOsPluginManifestV1> {
     let raw: unknown;
 
     try {
-      // Dynamic import works for both .js (ESM) and .cjs (CJS) manifests
-      const manifestUrl = pathToFileURL(manifestPath);
-      const manifestStat = await stat(manifestPath);
-      manifestUrl.searchParams.set("mtime", String(Math.trunc(manifestStat.mtimeMs)));
-      const mod = await import(manifestUrl.href) as Record<string, unknown>;
-      // The manifest may be the default export or the module itself
-      raw = mod["default"] ?? mod;
+      const requireFn = createRequire(import.meta.url);
+      const absolutePath = path.resolve(manifestPath);
+      // Bust the require cache so edits during plugin dev are reloaded.
+      delete requireFn.cache[absolutePath];
+      // Touch stat for an explicit existence check + parity with the previous
+      // mtime-based cache-busting heuristic. Throws ENOENT before require()
+      // produces a less actionable error.
+      await stat(absolutePath);
+      const mod = requireFn(absolutePath) as Record<string, unknown>;
+      // ESM modules surfaced via require() expose `default`; CJS modules
+      // surface their `module.exports` shape directly.
+      raw = (mod as Record<string, unknown>).default ?? mod;
     } catch (err) {
       throw new Error(
         `Failed to load manifest module at ${manifestPath}: ${String(err)}`,
@@ -982,7 +996,7 @@ export function pluginLoader(
 
   async function loadManifestFromPackageRoot(
     packageRoot: string,
-  ): Promise<PaperclipPluginManifestV1 | null> {
+  ): Promise<ValadrienOsPluginManifestV1 | null> {
     const pkgJson = await readPackageJson(packageRoot);
     if (!pkgJson) return null;
 
@@ -998,7 +1012,7 @@ export function pluginLoader(
   ): Promise<PluginRecord> {
     const manifest = await loadManifestFromPackageRoot(packageRoot);
     if (!manifest) {
-      throw new Error(`Plugin package ${plugin.packageName} no longer exposes a Paperclip manifest`);
+      throw new Error(`Plugin package ${plugin.packageName} no longer exposes a ValadrienOs manifest`);
     }
     if (manifest.id !== plugin.pluginKey) {
       throw new Error(
@@ -1027,7 +1041,7 @@ export function pluginLoader(
 
   /**
    * Build a DiscoveredPlugin from a resolved package directory, or null
-   * if the package is not a Paperclip plugin.
+   * if the package is not a ValadrienOs plugin.
    */
   async function buildDiscoveredPlugin(
     packagePath: string,
@@ -1040,10 +1054,10 @@ export function pluginLoader(
     const version = typeof pkgJson["version"] === "string" ? pkgJson["version"] : "0.0.0";
 
     // Determine if this is a plugin package at all
-    const hasPaperclipPlugin = "paperclipPlugin" in pkgJson;
+    const hasValadrienOsPlugin = "valadrienOsPlugin" in pkgJson;
     const nameMatchesConvention = isPluginPackageName(packageName);
 
-    if (!hasPaperclipPlugin && !nameMatchesConvention) {
+    if (!hasValadrienOsPlugin && !nameMatchesConvention) {
       return null;
     }
 
@@ -1313,15 +1327,15 @@ export function pluginLoader(
     // loadManifest
     // -----------------------------------------------------------------------
 
-    async loadManifest(packagePath: string): Promise<PaperclipPluginManifestV1 | null> {
+    async loadManifest(packagePath: string): Promise<ValadrienOsPluginManifestV1 | null> {
       const pkgJson = await readPackageJson(packagePath);
       if (!pkgJson) return null;
 
-      const hasPaperclipPlugin = "paperclipPlugin" in pkgJson;
+      const hasValadrienOsPlugin = "valadrienOsPlugin" in pkgJson;
       const packageName = typeof pkgJson["name"] === "string" ? pkgJson["name"] : "";
       const nameMatchesConvention = isPluginPackageName(packageName);
 
-      if (!hasPaperclipPlugin && !nameMatchesConvention) {
+      if (!hasValadrienOsPlugin && !nameMatchesConvention) {
         return null;
       }
 
@@ -1402,15 +1416,15 @@ export function pluginLoader(
       pluginId: string,
       upgradeOptions: Omit<PluginInstallOptions, "installDir">,
     ): Promise<{
-      oldManifest: PaperclipPluginManifestV1;
-      newManifest: PaperclipPluginManifestV1;
+      oldManifest: ValadrienOsPluginManifestV1;
+      newManifest: ValadrienOsPluginManifestV1;
       discovered: DiscoveredPlugin;
     }> {
       const plugin = (await registry.getById(pluginId)) as {
         id: string;
         packageName: string;
         packagePath: string | null;
-        manifestJson: PaperclipPluginManifestV1;
+        manifestJson: ValadrienOsPluginManifestV1;
       } | null;
       if (!plugin) throw new Error(`Plugin not found: ${pluginId}`);
 
@@ -1855,7 +1869,7 @@ export function pluginLoader(
       };
 
       // Repo-local plugin installs can resolve workspace TS sources at runtime
-      // (for example @paperclipai/shared exports). Run those workers through
+      // (for example @valadrien-os/shared exports). Run those workers through
       // the tsx loader so first-party example plugins work in development.
       if (activePlugin.packagePath && existsSync(DEV_TSX_LOADER_PATH)) {
         workerOptions.execArgv = ["--import", DEV_TSX_LOADER_PATH];

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, LoaderCircle, Save, Trash2, UserRoundPen } from "lucide-react";
-import type { AuthSession, CurrentUserProfile, UpdateCurrentUserProfile } from "@paperclipai/shared";
+import type { AuthSession, CurrentUserProfile, UpdateCurrentUserProfile } from "@valadrien-os/shared";
 import { authApi } from "@/api/auth";
 import { assetsApi } from "@/api/assets";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -134,15 +134,15 @@ export function ProfileSettings() {
   const initials = deriveInitials(currentName);
   const isSavingProfile = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
   const uploadHint = selectedCompany
-    ? `Stored in Paperclip file storage for ${selectedCompany.name}.`
-    : "Select a company to upload an avatar into Paperclip storage.";
+    ? `Stored in ValadrienOs file storage for ${selectedCompany.name}.`
+    : "Select a company to upload an avatar into ValadrienOs storage.";
 
   return (
     <div className="max-w-4xl space-y-6">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <UserRoundPen className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Profile</h1>
+          <h1 className="font-serif text-lg font-medium">Profile</h1>
         </div>
         <p className="text-sm text-muted-foreground">
           Control how your account appears in the sidebar and other board surfaces.
@@ -156,11 +156,10 @@ export function ProfileSettings() {
       ) : null}
 
       <section className="space-y-8">
-        <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-card shadow-sm">
-          <div className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(135deg,hsl(var(--primary))_0%,hsl(var(--accent))_58%,color-mix(in_oklab,hsl(var(--background))_76%,white_24%)_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.08),transparent_36%)]" />
+        <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-card">
+          <div className="absolute inset-x-0 top-0 h-32 bg-secondary/40" />
           <div className="relative p-6 pt-10">
-            <div className="flex flex-wrap items-end gap-5 rounded-[24px] border border-border/70 bg-background/92 p-5 shadow-[0_18px_44px_-28px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+            <div className="flex flex-wrap items-end gap-5 rounded-[24px] border border-border/70 bg-background/92 p-5 backdrop-blur-sm">
               <div className="space-y-3">
                 <label
                   htmlFor={avatarInputId}
@@ -181,10 +180,10 @@ export function ProfileSettings() {
                     }}
                   />
                   <span className="absolute inset-0 z-10 rounded-full bg-black/0 transition-colors group-hover:bg-black/14 group-focus-within:bg-black/14" />
-                  <span className="absolute bottom-1 right-1 z-20 flex size-9 items-center justify-center rounded-full border border-background bg-primary text-primary-foreground shadow-sm">
+                  <span className="absolute bottom-1 right-1 z-20 flex size-9 items-center justify-center rounded-full border border-background bg-primary text-primary-foreground">
                     {uploadAvatarMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Camera className="size-4" />}
                   </span>
-                  <Avatar size="lg" className="data-[size=lg]:size-24 ring-4 ring-background shadow-xl">
+                  <Avatar size="lg" className="data-[size=lg]:size-24 ring-4 ring-background">
                     {currentImage ? <AvatarImage src={currentImage} alt={currentName} /> : null}
                     <AvatarFallback>{initials}</AvatarFallback>
                   </Avatar>
@@ -215,7 +214,7 @@ export function ProfileSettings() {
 
               <div className="min-w-0 flex-1 space-y-2 pb-1">
                 <div>
-                  <h2 className="truncate text-2xl font-semibold text-foreground">{currentName}</h2>
+                  <h2 className="truncate font-serif text-2xl font-medium text-foreground">{currentName}</h2>
                   <p className="truncate text-sm text-muted-foreground">{sessionQuery.data.user.email ?? "No email"}</p>
                 </div>
                 <p className="max-w-2xl text-sm leading-6 text-muted-foreground">

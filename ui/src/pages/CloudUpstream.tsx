@@ -17,7 +17,7 @@ import type {
   CloudUpstreamPreview,
   CloudUpstreamRun,
   CloudUpstreamStep,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cloudUpstreamsApi } from "@/api/cloudUpstreams";
@@ -28,7 +28,7 @@ import { applyCompanyPrefix, extractCompanyPrefixFromPath } from "@/lib/company-
 import { Link, useLocation } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 
-const PENDING_CONNECTION_KEY = "paperclip-cloud-upstream-pending-connection";
+const PENDING_CONNECTION_KEY = "valadrien-os-cloud-upstream-pending-connection";
 const STEPS: Array<{ key: CloudUpstreamStep; label: string }> = [
   { key: "connect", label: "Connect" },
   { key: "scan", label: "Scan" },
@@ -216,7 +216,7 @@ export function CloudUpstream() {
       <div className="max-w-2xl space-y-4">
         <div className="flex items-center gap-2">
           <CloudUpload className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Cloud upstream</h1>
+          <h1 className="font-serif text-lg font-medium tracking-tight">Cloud upstream</h1>
         </div>
         <div className="rounded-md border border-border px-4 py-4 text-sm text-muted-foreground">
           Cloud sync is disabled. Enable it in{" "}
@@ -235,10 +235,10 @@ export function CloudUpstream() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <CloudUpload className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-lg font-semibold">Cloud upstream</h1>
+            <h1 className="font-serif text-lg font-medium tracking-tight">Cloud upstream</h1>
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Push {selectedCompany.name} into a Paperclip Cloud stack. Automations stay paused until activation.
+            Push {selectedCompany.name} into a ValadrienOs Cloud stack. Automations stay paused until activation.
           </p>
         </div>
         {connection?.target.origin ? (
@@ -252,7 +252,7 @@ export function CloudUpstream() {
       </div>
 
       {notice ? (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+        <div className="rounded-md border border-status-success/30 bg-status-success/10 px-3 py-2 text-sm text-status-success">
           {notice}
         </div>
       ) : null}
@@ -265,7 +265,7 @@ export function CloudUpstream() {
       <Stepper activeStep={latestRun?.activeStep ?? (preview ? "preview" : connection?.tokenStatus === "connected" ? "scan" : "connect")} />
 
       <section className="space-y-3">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Connection</div>
+        <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Connection</div>
         <div className="rounded-md border border-border px-4 py-4">
           {connection ? (
             <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-start">
@@ -274,10 +274,12 @@ export function CloudUpstream() {
                   {connection.target.stackDisplayName ?? connection.target.stackSlug ?? connection.target.stackId}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {connection.target.product} · {connection.target.origin} · token {connection.tokenStatus}
+                  {connection.target.product} · {connection.target.origin} · token{" "}
+                  <span className="font-mono">{connection.tokenStatus}</span>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  Schema {connection.target.schemaMajor}. Max chunk {formatBytes(connection.target.maxChunkBytes)}.
+                  Schema <span className="font-mono tabular-nums">{connection.target.schemaMajor}</span>. Max chunk{" "}
+                  <span className="font-mono tabular-nums">{formatBytes(connection.target.maxChunkBytes)}</span>.
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -298,8 +300,8 @@ export function CloudUpstream() {
               <Input
                 value={remoteUrl}
                 onChange={(event) => setRemoteUrl(event.target.value)}
-                placeholder="https://paperclip.paperclip.app/PC521D/dashboard"
-                aria-label="Paperclip Cloud stack URL"
+                placeholder="https://valadrien-os.valadrien-os.app/PC521D/dashboard"
+                aria-label="ValadrienOs Cloud stack URL"
               />
               <Button onClick={() => startMutation.mutate()} disabled={startMutation.isPending || !remoteUrl.trim()}>
                 {startMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
@@ -313,7 +315,7 @@ export function CloudUpstream() {
       {preview ? (
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preview</div>
+            <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Preview</div>
             <Button
               onClick={() => runMutation.mutate({ connectionId: preview.connectionId, companyId: preview.sourceCompanyId })}
               disabled={runMutation.isPending || !preview.schemaCompatible}
@@ -331,7 +333,7 @@ export function CloudUpstream() {
       {latestRun ? (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Progress and finish</div>
+            <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Progress and finish</div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => downloadRunReport(latestRun)}>
                 <FileJson className="h-4 w-4" />
@@ -367,12 +369,23 @@ export function CloudUpstream() {
           <div className="rounded-md border border-border px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-medium capitalize">{latestRun.status}</div>
+                <div className="flex items-center gap-2 text-sm font-medium capitalize">
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      latestRun.status === "succeeded"
+                        ? "bg-status-success"
+                        : latestRun.status === "failed" || latestRun.status === "cancelled"
+                          ? "bg-status-error"
+                          : "bg-status-running"
+                    }`}
+                  />
+                  {latestRun.status}
+                </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Run {latestRun.id.slice(0, 8)} · {latestRun.completedAt ? `completed ${formatDate(latestRun.completedAt)}` : "in progress"}
+                  Run <span className="font-mono">{latestRun.id.slice(0, 8)}</span> · {latestRun.completedAt ? <>completed <span className="font-mono tabular-nums">{formatDate(latestRun.completedAt)}</span></> : "in progress"}
                 </div>
               </div>
-              <div className="text-sm tabular-nums">{latestRun.progressPercent}%</div>
+              <div className="font-mono text-sm tabular-nums">{latestRun.progressPercent}%</div>
             </div>
             <div className="mt-3 h-2 rounded-full bg-muted">
               <div className="h-2 rounded-full bg-primary" style={{ width: `${latestRun.progressPercent}%` }} />
@@ -380,8 +393,8 @@ export function CloudUpstream() {
             <div className="mt-4 divide-y divide-border">
               {latestRun.events.map((event) => (
                 <div key={event.id} className="grid gap-2 py-2 text-sm sm:grid-cols-[7rem_8rem_1fr]">
-                  <span className="text-xs text-muted-foreground">{formatDate(event.at)}</span>
-                  <span className="text-xs capitalize text-muted-foreground">{event.phase}</span>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">{formatDate(event.at)}</span>
+                  <span className="font-mono text-xs capitalize text-muted-foreground">{event.phase}</span>
                   <span>{event.message}</span>
                 </div>
               ))}
@@ -401,7 +414,7 @@ export function CloudUpstream() {
 
       {upstreamQuery.data?.runs.length ? (
         <section className="space-y-3">
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center gap-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             <History className="h-3.5 w-3.5" />
             History
           </div>
@@ -413,8 +426,19 @@ export function CloudUpstream() {
                 className="grid w-full gap-1 px-4 py-3 text-left text-sm hover:bg-accent/40 sm:grid-cols-[1fr_auto]"
                 onClick={() => setActiveRun(run)}
               >
-                <span>Run {run.id.slice(0, 8)} · {run.status}</span>
-                <span className="text-xs text-muted-foreground">{formatDate(run.createdAt)}</span>
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      run.status === "succeeded"
+                        ? "bg-status-success"
+                        : run.status === "failed" || run.status === "cancelled"
+                          ? "bg-status-error"
+                          : "bg-status-running"
+                    }`}
+                  />
+                  Run <span className="font-mono">{run.id.slice(0, 8)}</span> · {run.status}
+                </span>
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">{formatDate(run.createdAt)}</span>
               </button>
             ))}
           </div>
@@ -449,7 +473,7 @@ function Stepper({ activeStep }: { activeStep: CloudUpstreamStep }) {
         return (
           <div key={step.key} className="flex items-center gap-2 text-xs">
             {complete ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <CheckCircle2 className="h-4 w-4 text-status-success" />
             ) : (
               <span className={active ? "h-4 w-4 rounded-full border-2 border-primary" : "h-4 w-4 rounded-full border border-border"} />
             )}
@@ -466,8 +490,8 @@ function SummaryGrid({ summary }: { summary: CloudUpstreamPreview["summary"] }) 
     <div className="grid gap-2 sm:grid-cols-4">
       {summary.map((item) => (
         <div key={item.key} className="rounded-md border border-border px-3 py-2">
-          <div className="text-lg font-semibold tabular-nums">{item.count}</div>
-          <div className="text-xs text-muted-foreground">{item.label}</div>
+          <div className="font-mono text-lg font-semibold tabular-nums">{item.count}</div>
+          <div className="mt-0.5 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{item.label}</div>
         </div>
       ))}
     </div>
@@ -484,7 +508,7 @@ function WarningsPanel({ warnings }: { warnings: CloudUpstreamPreview["warnings"
       <div className="divide-y divide-border">
         {warnings.map((warning) => (
           <div key={warning.code} className="grid gap-2 py-2 sm:grid-cols-[1.25rem_12rem_1fr]">
-            <AlertTriangle className={warning.severity === "blocker" ? "h-4 w-4 text-destructive" : "h-4 w-4 text-amber-600"} />
+            <AlertTriangle className={warning.severity === "blocker" ? "h-4 w-4 text-destructive" : "h-4 w-4 text-status-warning"} />
             <div className="text-sm font-medium">{warning.title}</div>
             <div className="text-sm text-muted-foreground">{warning.detail}</div>
           </div>

@@ -1,9 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import createDOMPurify from "dompurify";
-import { JSDOM } from "jsdom";
-import type { Db } from "@paperclipai/db";
-import { createAssetImageMetadataSchema } from "@paperclipai/shared";
+import type { Db } from "@valadrien-os/db";
+import { createAssetImageMetadataSchema } from "@valadrien-os/shared";
 import type { StorageService } from "../storage/types.js";
 import { assetService, logActivity } from "../services/index.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
@@ -18,7 +17,17 @@ const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
   SVG_CONTENT_TYPE,
 ]);
 
-function sanitizeSvgBuffer(input: Buffer): Buffer | null {
+type JsdomModule = typeof import("jsdom");
+type JsdomInstance = InstanceType<JsdomModule["JSDOM"]>;
+let jsdomModulePromise: Promise<JsdomModule> | null = null;
+
+function loadJsdom(): Promise<JsdomModule> {
+  jsdomModulePromise ??= import("jsdom");
+  return jsdomModulePromise;
+}
+
+async function sanitizeSvgBuffer(input: Buffer): Promise<Buffer | null> {
+  const { JSDOM } = await loadJsdom();
   const raw = input.toString("utf8").trim();
   if (!raw) return null;
 
@@ -40,7 +49,7 @@ function sanitizeSvgBuffer(input: Buffer): Buffer | null {
     }
   });
 
-  let parsedDom: JSDOM | null = null;
+  let parsedDom: JsdomInstance | null = null;
   try {
     const sanitized = domPurify.sanitize(raw, {
       USE_PROFILES: { svg: true, svgFilters: true, html: false },
@@ -54,11 +63,11 @@ function sanitizeSvgBuffer(input: Buffer): Buffer | null {
     const root = document.documentElement;
     if (!root || root.tagName.toLowerCase() !== "svg") return null;
 
-    for (const el of Array.from(root.querySelectorAll("script, foreignObject"))) {
+    for (const el of Array.from(root.querySelectorAll("script, foreignObject")) as Element[]) {
       el.remove();
     }
-    for (const el of Array.from(root.querySelectorAll("*"))) {
-      for (const attr of Array.from(el.attributes)) {
+    for (const el of Array.from(root.querySelectorAll("*")) as Element[]) {
+      for (const attr of Array.from(el.attributes) as Attr[]) {
         const attrName = attr.name.toLowerCase();
         const attrValue = attr.value.trim();
         if (attrName.startsWith("on")) {
@@ -145,7 +154,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
     }
     let fileBody = file.buffer;
     if (contentType === SVG_CONTENT_TYPE) {
-      const sanitized = sanitizeSvgBuffer(file.buffer);
+      const sanitized = await sanitizeSvgBuffer(file.buffer);
       if (!sanitized || sanitized.length <= 0) {
         res.status(422).json({ error: "SVG could not be sanitized" });
         return;
@@ -242,7 +251,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
 
     let fileBody = file.buffer;
     if (contentType === SVG_CONTENT_TYPE) {
-      const sanitized = sanitizeSvgBuffer(file.buffer);
+      const sanitized = await sanitizeSvgBuffer(file.buffer);
       if (!sanitized || sanitized.length <= 0) {
         res.status(422).json({ error: "SVG could not be sanitized" });
         return;

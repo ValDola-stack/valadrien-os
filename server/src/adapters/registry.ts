@@ -7,7 +7,8 @@ import type {
 import {
   buildSandboxNpmInstallCommand,
   getAdapterSessionManagement,
-} from "@paperclipai/adapter-utils";
+} from "@valadrien-os/adapter-utils";
+import type { AdapterSkillSnapshot } from "@valadrien-os/adapter-utils";
 import {
   execute as acpxExecute,
   testEnvironment as acpxTestEnvironment,
@@ -15,11 +16,11 @@ import {
   getConfigSchema as getAcpxConfigSchema,
   listAcpxSkills,
   syncAcpxSkills,
-} from "@paperclipai/adapter-acpx-local/server";
+} from "@valadrien-os/adapter-acpx-local/server";
 import {
   agentConfigurationDoc as acpxAgentConfigurationDoc,
   models as acpxModels,
-} from "@paperclipai/adapter-acpx-local";
+} from "@valadrien-os/adapter-acpx-local";
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -28,12 +29,12 @@ import {
   testEnvironment as claudeTestEnvironment,
   sessionCodec as claudeSessionCodec,
   getQuotaWindows as claudeGetQuotaWindows,
-} from "@paperclipai/adapter-claude-local/server";
+} from "@valadrien-os/adapter-claude-local/server";
 import {
   agentConfigurationDoc as claudeAgentConfigurationDoc,
   models as claudeModels,
   modelProfiles as claudeModelProfiles,
-} from "@paperclipai/adapter-claude-local";
+} from "@valadrien-os/adapter-claude-local";
 import {
   execute as codexExecute,
   listCodexSkills,
@@ -41,54 +42,54 @@ import {
   testEnvironment as codexTestEnvironment,
   sessionCodec as codexSessionCodec,
   getQuotaWindows as codexGetQuotaWindows,
-} from "@paperclipai/adapter-codex-local/server";
+} from "@valadrien-os/adapter-codex-local/server";
 import {
   agentConfigurationDoc as codexAgentConfigurationDoc,
   models as codexModels,
   modelProfiles as codexModelProfiles,
-} from "@paperclipai/adapter-codex-local";
+} from "@valadrien-os/adapter-codex-local";
 import {
   execute as cursorExecute,
   listCursorSkills,
   syncCursorSkills,
   testEnvironment as cursorTestEnvironment,
   sessionCodec as cursorSessionCodec,
-} from "@paperclipai/adapter-cursor-local/server";
+} from "@valadrien-os/adapter-cursor-local/server";
 import {
   agentConfigurationDoc as cursorAgentConfigurationDoc,
   models as cursorModels,
   modelProfiles as cursorModelProfiles,
-} from "@paperclipai/adapter-cursor-local";
+} from "@valadrien-os/adapter-cursor-local";
 import {
   execute as cursorCloudExecute,
   getConfigSchema as getCursorCloudConfigSchema,
   sessionCodec as cursorCloudSessionCodec,
   testEnvironment as cursorCloudTestEnvironment,
-} from "@paperclipai/adapter-cursor-cloud/server";
-import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@paperclipai/adapter-cursor-cloud";
+} from "@valadrien-os/adapter-cursor-cloud/server";
+import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@valadrien-os/adapter-cursor-cloud";
 import {
   execute as geminiExecute,
   listGeminiSkills,
   syncGeminiSkills,
   testEnvironment as geminiTestEnvironment,
   sessionCodec as geminiSessionCodec,
-} from "@paperclipai/adapter-gemini-local/server";
+} from "@valadrien-os/adapter-gemini-local/server";
 import {
   agentConfigurationDoc as geminiAgentConfigurationDoc,
   models as geminiModels,
   modelProfiles as geminiModelProfiles,
-} from "@paperclipai/adapter-gemini-local";
+} from "@valadrien-os/adapter-gemini-local";
 import {
   execute as grokExecute,
   listGrokSkills,
   syncGrokSkills,
   testEnvironment as grokTestEnvironment,
   sessionCodec as grokSessionCodec,
-} from "@paperclipai/adapter-grok-local/server";
+} from "@valadrien-os/adapter-grok-local/server";
 import {
   agentConfigurationDoc as grokAgentConfigurationDoc,
   models as grokModels,
-} from "@paperclipai/adapter-grok-local";
+} from "@valadrien-os/adapter-grok-local";
 import {
   execute as openCodeExecute,
   listOpenCodeSkills,
@@ -96,20 +97,20 @@ import {
   testEnvironment as openCodeTestEnvironment,
   sessionCodec as openCodeSessionCodec,
   listOpenCodeModels,
-} from "@paperclipai/adapter-opencode-local/server";
+} from "@valadrien-os/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
   models as openCodeModels,
   modelProfiles as openCodeModelProfiles,
-} from "@paperclipai/adapter-opencode-local";
+} from "@valadrien-os/adapter-opencode-local";
 import {
   execute as openclawGatewayExecute,
   testEnvironment as openclawGatewayTestEnvironment,
-} from "@paperclipai/adapter-openclaw-gateway/server";
+} from "@valadrien-os/adapter-openclaw-gateway/server";
 import {
   agentConfigurationDoc as openclawGatewayAgentConfigurationDoc,
   models as openclawGatewayModels,
-} from "@paperclipai/adapter-openclaw-gateway";
+} from "@valadrien-os/adapter-openclaw-gateway";
 import { listCodexModels, refreshCodexModels } from "./codex-models.js";
 import { listCursorModels } from "./cursor-models.js";
 import {
@@ -119,11 +120,11 @@ import {
   testEnvironment as piTestEnvironment,
   sessionCodec as piSessionCodec,
   listPiModels,
-} from "@paperclipai/adapter-pi-local/server";
+} from "@valadrien-os/adapter-pi-local/server";
 import {
   agentConfigurationDoc as piAgentConfigurationDoc,
   modelProfiles as piModelProfiles,
-} from "@paperclipai/adapter-pi-local";
+} from "@valadrien-os/adapter-pi-local";
 import {
   execute as hermesExecute,
   testEnvironment as hermesTestEnvironment,
@@ -210,6 +211,26 @@ function normalizeHermesConfig<T extends { config?: unknown; agent?: unknown }>(
   }
 
   return ctx;
+}
+
+// `hermes-paperclip-adapter` is the upstream-published external dependency and
+// still ships pre-rebrand type values — specifically the `paperclip_required`
+// `AdapterSkillOrigin`. Our local types and zod validators only accept
+// `valadrien_os_required`, so we translate at the boundary instead of polluting
+// the rebranded union with the legacy string. The cast to our local
+// `AdapterSkillSnapshot` is safe because we've just mapped every legacy origin
+// value to its rebranded equivalent.
+function rebrandHermesSkillSnapshot(snapshot: unknown): AdapterSkillSnapshot {
+  const typed = snapshot as {
+    entries?: ReadonlyArray<{ origin?: string }>;
+  } & Record<string, unknown>;
+  const entries = typed.entries ?? [];
+  const rebrandedEntries = entries.map((entry) =>
+    entry.origin === "paperclip_required"
+      ? { ...entry, origin: "valadrien_os_required" }
+      : entry,
+  );
+  return { ...typed, entries: rebrandedEntries } as unknown as AdapterSkillSnapshot;
 }
 
 function dedupeAdapterModels(models: AdapterModel[]): AdapterModel[] {
@@ -447,24 +468,24 @@ const hermesLocalAdapter: ServerAdapterModule = {
         ? (existingConfig.env as Record<string, string>)
         : {};
     const explicitApiKey =
-      typeof existingEnv.PAPERCLIP_API_KEY === "string" && existingEnv.PAPERCLIP_API_KEY.trim().length > 0;
+      typeof existingEnv.VALADRIEN_OS_API_KEY === "string" && existingEnv.VALADRIEN_OS_API_KEY.trim().length > 0;
     const promptTemplate =
       typeof existingConfig.promptTemplate === "string" && existingConfig.promptTemplate.trim().length > 0
         ? existingConfig.promptTemplate
         : "";
     const authGuardPrompt = [
-      "Paperclip API safety rule:",
-      "Use Authorization: Bearer $PAPERCLIP_API_KEY on every Paperclip API request.",
-      "Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every Paperclip API request that writes or mutates data, including comments and issue updates.",
-      "Never use a board, browser, or local-board session for Paperclip API writes.",
+      "ValadrienOs API safety rule:",
+      "Use Authorization: Bearer $VALADRIEN_OS_API_KEY on every ValadrienOs API request.",
+      "Use X-ValadrienOs-Run-Id: $VALADRIEN_OS_RUN_ID on every ValadrienOs API request that writes or mutates data, including comments and issue updates.",
+      "Never use a board, browser, or local-board session for ValadrienOs API writes.",
     ].join("\n");
 
     const patchedConfig: Record<string, unknown> = {
       ...existingConfig,
       env: {
         ...existingEnv,
-        ...(!explicitApiKey ? { PAPERCLIP_API_KEY: normalizedCtx.authToken } : {}),
-        PAPERCLIP_RUN_ID: normalizedCtx.runId,
+        ...(!explicitApiKey ? { VALADRIEN_OS_API_KEY: normalizedCtx.authToken } : {}),
+        VALADRIEN_OS_RUN_ID: normalizedCtx.runId,
       },
     };
 
@@ -487,8 +508,9 @@ const hermesLocalAdapter: ServerAdapterModule = {
   },
   testEnvironment: (ctx) => hermesTestEnvironment(normalizeHermesConfig(ctx) as never),
   sessionCodec: hermesSessionCodec,
-  listSkills: hermesListSkills,
-  syncSkills: hermesSyncSkills,
+  listSkills: async (ctx) => rebrandHermesSkillSnapshot(await hermesListSkills(ctx)),
+  syncSkills: async (ctx, desiredSkills) =>
+    rebrandHermesSkillSnapshot(await hermesSyncSkills(ctx, desiredSkills)),
   models: hermesModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: false,
@@ -586,7 +608,7 @@ const externalAdaptersReady: Promise<void> = (async () => {
       const overriding = BUILTIN_ADAPTER_TYPES.has(externalAdapter.type);
       if (overriding) {
         console.log(
-          `[paperclip] External adapter "${externalAdapter.type}" overrides built-in adapter`,
+          `[valadrien-os] External adapter "${externalAdapter.type}" overrides built-in adapter`,
         );
         // Save the original builtin for later restoration.
         const existing = adaptersByType.get(externalAdapter.type);
@@ -600,7 +622,7 @@ const externalAdaptersReady: Promise<void> = (async () => {
       );
     }
   } catch (err) {
-    console.error("[paperclip] Failed to load external adapters:", err);
+    console.error("[valadrien-os] Failed to load external adapters:", err);
   }
 })();
 
@@ -740,12 +762,12 @@ export function setOverridePaused(type: string, paused: boolean): boolean {
   const wasPaused = pausedOverrides.has(type);
   if (paused && !wasPaused) {
     pausedOverrides.add(type);
-    console.log(`[paperclip] Override paused for "${type}" — builtin adapter restored`);
+    console.log(`[valadrien-os] Override paused for "${type}" — builtin adapter restored`);
     return true;
   }
   if (!paused && wasPaused) {
     pausedOverrides.delete(type);
-    console.log(`[paperclip] Override resumed for "${type}" — external adapter active`);
+    console.log(`[valadrien-os] Override resumed for "${type}" — external adapter active`);
     return true;
   }
   return false;

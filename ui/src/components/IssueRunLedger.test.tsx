@@ -3,7 +3,7 @@
 import { act } from "react";
 import type { ComponentProps, ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { ActivityEvent, Issue, RunLivenessState } from "@paperclipai/shared";
+import type { ActivityEvent, Issue, RunLivenessState } from "@valadrien-os/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunForIssue } from "../api/activity";
 import type { ActiveRunForIssue } from "../api/heartbeats";
@@ -453,8 +453,8 @@ describe("IssueRunLedger", () => {
     const watchdogBanner = Array.from(container.querySelectorAll("p"))
       .find((node) => node.textContent?.includes("Stale-run watchdog alert"))
       ?.closest("div");
-    expect(watchdogBanner?.className).toContain("border-red-500/30");
-    expect(watchdogBanner?.className).toContain("bg-red-500/10");
+    expect(watchdogBanner?.className).toContain("border-status-error/30");
+    expect(watchdogBanner?.className).toContain("bg-status-error/12");
 
     const continueButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("Continue monitoring"),

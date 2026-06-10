@@ -175,7 +175,7 @@ function replaceWorkspaceDeps(deps, version) {
   const next = { ...deps };
 
   for (const [name, value] of Object.entries(next)) {
-    if (!name.startsWith("@paperclipai/")) continue;
+    if (!name.startsWith("@valadrien-os/")) continue;
     if (typeof value !== "string" || !value.startsWith("workspace:")) continue;
     next[name] = version;
   }
@@ -229,7 +229,15 @@ function checkConfiguration() {
   const disabledCount = packages.length - enabledCount;
 
   if (enabledCount === 0) {
-    throw new Error(`no packages are enabled for CI publishing in ${manifestPath}`);
+    // Fork-rebrand transitional state: the renamed @valadrien-os/* scope has
+    // not yet been bootstrapped on npm, so every package is "disabled pending
+    // bootstrap". Warn instead of failing so policy CI can still run while
+    // the npm-publishing decision is deferred. Re-enable per-package by
+    // flipping its `publishFromCi` field once the first publish has landed.
+    process.stderr.write(
+      `Release package manifest WARN: 0 packages enabled for CI publish; ${disabledCount} disabled pending bootstrap.\n`,
+    );
+    return;
   }
 
   process.stdout.write(

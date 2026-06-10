@@ -1,14 +1,14 @@
-# Paperclip
+# ValAdrien OS
 
-**Paperclip is the backbone of the autonomous economy.** We are building the infrastructure that autonomous AI companies run on. Our goal is for Paperclip-powered companies to collectively generate economic output that rivals the GDP of the world's largest countries. Every decision we make should serve that: make autonomous companies more capable, more governable, more scalable, and more real.
+**ValAdrien OS is the backbone of the autonomous economy.** We are building the infrastructure that autonomous AI companies run on. Our goal is for ValAdrien OS-powered companies to collectively generate economic output that rivals the GDP of the world's largest countries. Every decision we make should serve that: make autonomous companies more capable, more governable, more scalable, and more real.
 
 ## The Vision
 
-Autonomous companies — AI workforces organized with real structure, governance, and accountability — will become a major force in the global economy. Not one company. Thousands. Millions. An entire economic layer that runs on AI labor, coordinated through Paperclip.
+Autonomous companies — AI workforces organized with real structure, governance, and accountability — will become a major force in the global economy. Not one company. Thousands. Millions. An entire economic layer that runs on AI labor, coordinated through ValAdrien OS.
 
-Paperclip is not the company. Paperclip is what makes the companies possible. We are the control plane, the nervous system, the operating layer. Every autonomous company needs structure, task management, cost control, goal alignment, and human governance. That's us. We are to autonomous companies what the corporate operating system is to human ones — except this time, the operating system is real software, not metaphor.
+ValAdrien OS is not the company. ValAdrien OS is what makes the companies possible. We are the control plane, the nervous system, the operating layer. Every autonomous company needs structure, task management, cost control, goal alignment, and human governance. That's us. We are to autonomous companies what the corporate operating system is to human ones — except this time, the operating system is real software, not metaphor.
 
-The measure of our success is not whether one company works. It's whether Paperclip becomes the default foundation that autonomous companies are built on — and whether those companies, collectively, become a serious economic force that rivals the output of nations.
+The measure of our success is not whether one company works. It's whether ValAdrien OS becomes the default foundation that autonomous companies are built on — and whether those companies, collectively, become a serious economic force that rivals the output of nations.
 
 ## The Problem
 
@@ -16,7 +16,7 @@ Task management software doesn't go far enough. When your entire workforce is AI
 
 ## What This Is
 
-Paperclip is the command, communication, and control plane for a company of AI agents. It is the single place where you:
+ValAdrien OS is the command, communication, and control plane for a company of AI agents. It is the single place where you:
 
 - **Manage agents as employees** — hire, organize, and track who does what
 - **Define org structure** — org charts that agents themselves operate within
@@ -53,6 +53,25 @@ Agents run externally and report into the control plane. Adapters connect differ
 
 The control plane doesn't run agents. It orchestrates them. Agents run wherever they run and phone home.
 
+## Operator hosting (ValAdrien.DEV)
+
+ValAdrien.DEV runs a **single hosted control-plane instance** for dogfooding and early clients. The reference production stack (2026) is:
+
+```text
+GitHub  →  Vercel (board + API)  →  Supabase (Postgres only)
+```
+
+- **Vercel** hosts the monorepo build: static UI in `public/`, Express API via `api/index.mjs` serverless functions, env vars for secrets and auth.
+- **Supabase** is Postgres only — not Supabase Auth. ValAdrien OS uses Better Auth on the Vercel app.
+- **Railway / Docker workers** are optional sidecars for runtimes Vercel cannot host; they are not the main board URL.
+
+Fresh hosted databases use the **valadrien-os Drizzle schema** (migrations on startup when `VALADRIEN_OS_MIGRATION_AUTO_APPLY=true`). Archived legacy Supabase projects from earlier forks are not migrated in place.
+
+Canonical operator runbooks:
+
+- [Host on Vercel + Supabase](../doc/plans/2026-06-02-host-valadrien-vercel-supabase-walkthrough.md)
+- [Deploy troubleshooting](../docs/deploy/troubleshooting.md)
+
 ## Core Principle
 
-You should be able to look at Paperclip and understand your entire company at a glance — who's doing what, how much it costs, and whether it's working.
+You should be able to look at ValAdrien OS and understand your entire company at a glance — who's doing what, how much it costs, and whether it's working.

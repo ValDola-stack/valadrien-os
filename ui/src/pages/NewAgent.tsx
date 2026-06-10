@@ -6,7 +6,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { agentsApi } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
 import { queryKeys } from "../lib/queryKeys";
-import { AGENT_ROLES, type AdapterEnvironmentTestResult } from "@paperclipai/shared";
+import { AGENT_ROLES, type AdapterEnvironmentTestResult } from "@valadrien-os/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,10 +31,10 @@ import { buildNewAgentHirePayload } from "../lib/new-agent-hire-payload";
 import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
   DEFAULT_CODEX_LOCAL_MODEL,
-} from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@paperclipai/adapter-opencode-local";
+} from "@valadrien-os/adapter-codex-local";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@valadrien-os/adapter-cursor-local";
+import { DEFAULT_GEMINI_LOCAL_MODEL } from "@valadrien-os/adapter-gemini-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@valadrien-os/adapter-opencode-local";
 
 function createValuesForAdapterType(
   adapterType: CreateConfigValues["adapterType"],
@@ -160,7 +160,7 @@ export function NewAgent() {
     );
   }
 
-  const availableSkills = (companySkills ?? []).filter((skill) => !skill.key.startsWith("paperclipai/paperclip/"));
+  const availableSkills = (companySkills ?? []).filter((skill) => !skill.key.startsWith("ValDola-stack/valadrien-os/"));
 
   function toggleSkill(key: string, checked: boolean) {
     setSelectedSkillKeys((prev) => {
@@ -189,8 +189,8 @@ export function NewAgent() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">New Agent</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="font-serif text-2xl font-medium tracking-tight">New Agent</h1>
+        <p className="mt-1 font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">
           Advanced agent configuration
         </p>
       </div>
@@ -269,9 +269,11 @@ export function NewAgent() {
         <div className="border-t border-border px-4 py-4">
           <div className="space-y-3">
             <div>
-              <h2 className="text-sm font-medium">Company skills</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Optional skills from the company library. Built-in Paperclip runtime skills are added automatically.
+              <h2 className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Company Skills
+              </h2>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Optional skills from the company library. Built-in ValadrienOs runtime skills are added automatically.
               </p>
             </div>
             {availableSkills.length === 0 ? (

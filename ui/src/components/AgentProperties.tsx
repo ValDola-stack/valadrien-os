@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@/lib/router";
-import { AGENT_ROLE_LABELS, type Agent, type AgentRuntimeState } from "@paperclipai/shared";
+import { AGENT_ROLE_LABELS, type Agent, type AgentRuntimeState } from "@valadrien-os/shared";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
@@ -68,7 +68,7 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         )}
         {runtimeState?.lastError && (
           <PropertyRow label="Last error">
-            <span className="text-xs text-red-600 dark:text-red-400 break-words min-w-0">{runtimeState.lastError}</span>
+            <span className="text-xs text-status-error break-words min-w-0">{runtimeState.lastError}</span>
           </PropertyRow>
         )}
         {agent.lastHeartbeatAt && (

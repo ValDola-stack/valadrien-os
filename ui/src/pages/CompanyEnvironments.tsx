@@ -6,7 +6,7 @@ import {
   type Environment,
   type EnvironmentProbeResult,
   type JsonSchema,
-} from "@paperclipai/shared";
+} from "@valadrien-os/shared";
 import { Check, Settings } from "lucide-react";
 import { environmentsApi } from "@/api/environments";
 import { instanceSettingsApi } from "@/api/instanceSettings";
@@ -149,7 +149,7 @@ function summarizeSandboxConfig(config: Record<string, unknown>): string | null 
 
 function SupportMark({ supported }: { supported: boolean }) {
   return supported ? (
-    <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-400">
+    <span className="inline-flex items-center gap-1 text-status-success">
       <Check className="h-3 w-3" />
       Yes
     </span>
@@ -405,7 +405,7 @@ export function CompanyEnvironments() {
       <div className="max-w-3xl space-y-4">
         <div className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Company Environments</h1>
+          <h1 className="font-serif text-lg font-medium">Company Environments</h1>
         </div>
         <div className="rounded-md border border-border px-4 py-4 text-sm text-muted-foreground">
           Enable Environments in instance experimental settings to manage company execution targets.
@@ -419,7 +419,7 @@ export function CompanyEnvironments() {
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-lg font-semibold">Company Environments</h1>
+          <h1 className="font-serif text-lg font-medium">Company Environments</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
           Define reusable execution targets for projects, issue workspaces, and remote-capable adapters.
@@ -521,7 +521,7 @@ export function CompanyEnvironments() {
                           })()}
                         </div>
                       ) : (
-                        <div className="text-xs text-muted-foreground">Runs on this Paperclip host.</div>
+                        <div className="text-xs text-muted-foreground">Runs on this ValadrienOs host.</div>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -552,7 +552,7 @@ export function CompanyEnvironments() {
                     <div
                       className={
                         probe.ok
-                          ? "mt-3 rounded border border-green-500/30 bg-green-500/5 px-2.5 py-2 text-xs text-green-700"
+                          ? "mt-3 rounded border border-status-success/30 bg-status-success/10 px-2.5 py-2 text-xs text-status-success"
                           : "mt-3 rounded border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive"
                       }
                     >
@@ -654,11 +654,11 @@ export function CompanyEnvironments() {
                     onChange={(e) => setEnvironmentForm((current) => ({ ...current, sshUsername: e.target.value }))}
                   />
                 </Field>
-                <Field label="Remote workspace path" hint="Absolute path that Paperclip will verify during SSH connection tests.">
+                <Field label="Remote workspace path" hint="Absolute path that ValadrienOs will verify during SSH connection tests.">
                   <input
                     className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
                     type="text"
-                    placeholder="/Users/paperclip/workspace"
+                    placeholder="/Users/valadrien-os/workspace"
                     value={environmentForm.sshRemoteWorkspacePath}
                     onChange={(e) =>
                       setEnvironmentForm((current) => ({ ...current, sshRemoteWorkspacePath: e.target.value }))}
@@ -801,7 +801,7 @@ export function CompanyEnvironments() {
                 </span>
               ) : null}
               {draftEnvironmentProbeMutation.data ? (
-                <span className={draftEnvironmentProbeMutation.data.ok ? "text-xs text-green-600" : "text-xs text-destructive"}>
+                <span className={draftEnvironmentProbeMutation.data.ok ? "text-xs text-status-success" : "text-xs text-destructive"}>
                   {draftEnvironmentProbeMutation.data.summary}
                 </span>
               ) : null}
