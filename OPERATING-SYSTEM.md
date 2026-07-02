@@ -36,7 +36,7 @@ stays in git; the bundle is a pointer.
 
 ## 1. The golden path (the loop)
 
-```
+```text
   Linear issue ──▶ Traycer (PLAN, Claude) ──▶ phases
        ▲                                        │
        │                              Claude Code (EXECUTE, native)
@@ -87,7 +87,8 @@ Legend: ✅ wired · ⚠️ partial / CLI-only · ❌ not connected
 2. **CodeRabbit** must be confirmed installed on the `ValDola-stack` org repos —
    without it, "diversity at review" is theoretical.
 3. **Two issue trackers** — Linear (human/planning) + ValAdrien OS issues (VAL-*).
-   Source-of-truth bridge undecided. See §4.
+   Source-of-truth split **locked**; the one-way `Sentry/Braintrust → Linear → OS`
+   bridge is implemented (Vercel cron). See §4.
 
 ---
 
@@ -106,9 +107,10 @@ Legend: ✅ wired · ⚠️ partial / CLI-only · ❌ not connected
 
 ## 4. Open decisions (resolve before full wiring)
 
-- **Issue source of truth.** Proposed: **Linear = human/planning layer**,
+- **Issue source of truth.** **LOCKED:** **Linear = human/planning layer**,
   **ValAdrien OS = agent-execution layer**, with a one-way bridge
-  `Sentry/Braintrust → Linear → OS`. Not yet locked.
+  `Sentry/Braintrust → Linear → OS`. Implemented as a Vercel cron in
+  `valadrien-os-server` (see `dotfiles/bridges/sentry-braintrust-to-linear-to-os.md`).
 - **Codex as second (review-only) reviewer** — optional non-Claude reviewer #2
   alongside CodeRabbit. Decide once CodeRabbit is confirmed live.
 
