@@ -26,13 +26,16 @@ const PROVENANCE_ROUTE: Record<string, string> = {
 };
 const DEFAULT_AGENT = "Sol"; // escalate anything unrouted
 
-// Postgres unique_violation — the DB-level idempotency backstop for concurrent syncs.
-function isUniqueViolation(error: unknown): boolean {
+// DB-level idempotency backstop for concurrent syncs. Scoped to the Linear origin
+// index only — any OTHER unique violation (e.g. identifier collision) is a real
+// failure and must NOT be swallowed as "already created".
+const LINEAR_ORIGIN_UNIQUE_CONSTRAINT = "issues_linear_origin_uq";
+function isLinearOriginDuplicate(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { code?: string; constraint?: string; constraint_name?: string };
   return (
-    !!error &&
-    typeof error === "object" &&
-    "code" in error &&
-    (error as { code?: string }).code === "23505"
+    err.code === "23505" &&
+    (err.constraint ?? err.constraint_name) === LINEAR_ORIGIN_UNIQUE_CONSTRAINT
   );
 }
 
@@ -167,7 +170,7 @@ export async function runLinearOsSync(
           // `issues_linear_origin_uq` on (companyId, originKind, originId) makes the
           // DB the arbiter. If a concurrent sync won the insert, treat it as
           // already-created and fall through to the label write-back.
-          if (!isUniqueViolation(err)) throw err;
+          if (!isLinearOriginDuplicate(err)) throw err;
           created = false;
         }
       }
