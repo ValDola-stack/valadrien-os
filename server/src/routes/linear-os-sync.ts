@@ -178,12 +178,13 @@ export async function runLinearOsSync(
       // Idempotency guard #1: write `os:synced` back AND drop `os:dispatch` so a synced
       // issue no longer matches the fetch query (otherwise the candidate set grows every
       // run). Linear has no atomic add/remove-label, so set the full target label-id set.
-      const dispatchLabelId = issue.labels.nodes.find((l) => l.name === DISPATCH_LABEL)?.id;
+      // Drop ALL labels named os:dispatch (match the fetch predicate, which is
+      // by name) so a duplicate-named label can't keep the issue in the fetch set.
       const labelIds = Array.from(
         new Set(
           issue.labels.nodes
+            .filter((l) => l.name !== DISPATCH_LABEL)
             .map((l) => l.id)
-            .filter((id) => id !== dispatchLabelId)
             .concat(SYNCED_LABEL_ID),
         ),
       );
