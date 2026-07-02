@@ -26,6 +26,16 @@ const PROVENANCE_ROUTE: Record<string, string> = {
 };
 const DEFAULT_AGENT = "Sol"; // escalate anything unrouted
 
+// Postgres unique_violation — the DB-level idempotency backstop for concurrent syncs.
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: string }).code === "23505"
+  );
+}
+
 type LinearLabel = { id: string; name: string };
 type LinearIssue = {
   id: string;
@@ -124,38 +134,56 @@ export async function runLinearOsSync(
           ),
         )
         .limit(1);
-      const created = existing.length === 0;
+      let created = existing.length === 0;
       if (created) {
-        const osIssue = await issues.create(companyId, {
-          title: issue.title,
-          description: `From Linear ${issue.identifier}: ${issue.url}\n\n${issue.description ?? ""}`,
-          assigneeAgentId,
-          status: "todo",
-          priority: "medium",
-          originKind: "linear",
-          originId: issue.id,
-        });
-        // Mutating action → activity log entry (repo guideline for server endpoints).
-        await logActivity(db, {
-          companyId,
-          actorType: "system",
-          actorId: "linear-os-sync",
-          agentId: assigneeAgentId,
-          action: "issue.created",
-          entityType: "issue",
-          entityId: osIssue.id,
-          details: {
-            source: "linear-bridge",
-            linearId: issue.id,
-            linearIdentifier: issue.identifier,
-            routedAgent: agentName,
-          },
-        });
+        try {
+          const osIssue = await issues.create(companyId, {
+            title: issue.title,
+            description: `From Linear ${issue.identifier}: ${issue.url}\n\n${issue.description ?? ""}`,
+            assigneeAgentId,
+            status: "todo",
+            priority: "medium",
+            originKind: "linear",
+            originId: issue.id,
+          });
+          // Mutating action → activity log entry (repo guideline for server endpoints).
+          await logActivity(db, {
+            companyId,
+            actorType: "system",
+            actorId: "linear-os-sync",
+            agentId: assigneeAgentId,
+            action: "issue.created",
+            entityType: "issue",
+            entityId: osIssue.id,
+            details: {
+              source: "linear-bridge",
+              linearId: issue.id,
+              linearIdentifier: issue.identifier,
+              routedAgent: agentName,
+            },
+          });
+        } catch (err) {
+          // Idempotency guard #3 (race-safe): the partial unique index
+          // `issues_linear_origin_uq` on (companyId, originKind, originId) makes the
+          // DB the arbiter. If a concurrent sync won the insert, treat it as
+          // already-created and fall through to the label write-back.
+          if (!isUniqueViolation(err)) throw err;
+          created = false;
+        }
       }
 
-      // Idempotency guard #1: write `os:synced` back so we never re-dispatch. Linear has no
-      // atomic add-label, so set the full label-id set (existing + synced).
-      const labelIds = Array.from(new Set([...issue.labels.nodes.map((l) => l.id), SYNCED_LABEL_ID]));
+      // Idempotency guard #1: write `os:synced` back AND drop `os:dispatch` so a synced
+      // issue no longer matches the fetch query (otherwise the candidate set grows every
+      // run). Linear has no atomic add/remove-label, so set the full target label-id set.
+      const dispatchLabelId = issue.labels.nodes.find((l) => l.name === DISPATCH_LABEL)?.id;
+      const labelIds = Array.from(
+        new Set(
+          issue.labels.nodes
+            .map((l) => l.id)
+            .filter((id) => id !== dispatchLabelId)
+            .concat(SYNCED_LABEL_ID),
+        ),
+      );
       await linear(
         apiKey,
         `mutation MarkSynced($id: String!, $labelIds: [String!]) {
