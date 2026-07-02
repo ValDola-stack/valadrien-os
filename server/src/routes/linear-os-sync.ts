@@ -2,6 +2,7 @@ import { Router } from "express";
 import { and, eq } from "drizzle-orm";
 import { type Db, issues as issuesTable, agents as agentsTable } from "@valadrien-os/db";
 import { issueService } from "../services/issues.js";
+import { logActivity } from "../services/activity-log.js";
 
 /**
  * One-way bridge: Linear issues labeled `os:dispatch` (and not yet `os:synced`) become
@@ -34,6 +35,12 @@ type LinearIssue = {
   url: string;
   labels: { nodes: LinearLabel[] };
 };
+type DispatchPage = {
+  issues: {
+    nodes: LinearIssue[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
+};
 
 async function linear<T = unknown>(
   apiKey: string,
@@ -44,6 +51,9 @@ async function linear<T = unknown>(
     method: "POST",
     headers: { Authorization: apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
+    // Don't let a hung Linear response pin the serverless invocation to the
+    // platform hard timeout — bound every call so the cron stays reliable.
+    signal: AbortSignal.timeout(15_000),
   });
   const json = (await res.json()) as { data?: T; errors?: unknown };
   if (!res.ok || json.errors) {
@@ -52,23 +62,38 @@ async function linear<T = unknown>(
   return json.data as T;
 }
 
+type SyncResult = { linear: string; agent: string; created: boolean; error?: string };
+
 export async function runLinearOsSync(
   db: Db,
   opts: { apiKey: string; companyId: string },
-): Promise<{ linear: string; agent: string; created: boolean }[]> {
+): Promise<SyncResult[]> {
   const { apiKey, companyId } = opts;
   const issues = issueService(db);
 
-  // 1. Linear issues flagged for dispatch, not yet synced.
-  const data = await linear<{ issues: { nodes: LinearIssue[] } }>(
-    apiKey,
-    `query DispatchIssues {
-      issues(first: 50, filter: { labels: { some: { name: { eq: "${DISPATCH_LABEL}" } } } }) {
-        nodes { id identifier title description url labels { nodes { id name } } }
-      }
-    }`,
-  );
-  const candidates = data.issues.nodes.filter(
+  // 1. Linear issues flagged for dispatch, not yet synced. Paginate with a cursor
+  //    so we never skip candidates once more than one page matches.
+  const allNodes: LinearIssue[] = [];
+  let after: string | null = null;
+  do {
+    const page: DispatchPage = await linear<DispatchPage>(
+      apiKey,
+      `query DispatchIssues($after: String) {
+        issues(first: 100, after: $after, filter: { labels: { some: { name: { eq: "${DISPATCH_LABEL}" } } } }) {
+          nodes { id identifier title description url labels { nodes { id name } } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }`,
+      { after },
+    );
+    allNodes.push(...page.issues.nodes);
+    after = page.issues.pageInfo.hasNextPage ? page.issues.pageInfo.endCursor : null;
+  } while (after);
+
+  // Exclude `os:synced` here (post-filter): Linear's label filter can't reliably
+  // express "has os:dispatch AND NOT os:synced" in one clause, and the label
+  // write-back below is the authoritative idempotency guard regardless.
+  const candidates = allNodes.filter(
     (n) => !n.labels.nodes.some((l) => l.name === SYNCED_LABEL),
   );
 
@@ -79,60 +104,91 @@ export async function runLinearOsSync(
     .where(eq(agentsTable.companyId, companyId));
   const idByName = new Map(agentRows.map((a) => [a.name, a.id]));
 
-  const results: { linear: string; agent: string; created: boolean }[] = [];
+  const results: SyncResult[] = [];
   for (const issue of candidates) {
     const src = issue.labels.nodes.map((l) => l.name).find((n) => n.startsWith("source:"));
     const agentName = (src && PROVENANCE_ROUTE[src]) || DEFAULT_AGENT;
     const assigneeAgentId = idByName.get(agentName) ?? idByName.get(DEFAULT_AGENT) ?? null;
 
-    // Idempotency guard #2 (survives a failed label write): don't re-create for the same Linear id.
-    const existing = await db
-      .select({ id: issuesTable.id })
-      .from(issuesTable)
-      .where(
-        and(
-          eq(issuesTable.companyId, companyId),
-          eq(issuesTable.originKind, "linear"),
-          eq(issuesTable.originId, issue.id),
-        ),
-      )
-      .limit(1);
-    const created = existing.length === 0;
-    if (created) {
-      await issues.create(companyId, {
-        title: issue.title,
-        description: `From Linear ${issue.identifier}: ${issue.url}\n\n${issue.description ?? ""}`,
-        assigneeAgentId,
-        status: "todo",
-        priority: "medium",
-        originKind: "linear",
-        originId: issue.id,
+    // Isolate each issue: one bad Linear id / write must not abort the rest of the batch.
+    try {
+      // Idempotency guard #2 (survives a failed label write): don't re-create for the same Linear id.
+      const existing = await db
+        .select({ id: issuesTable.id })
+        .from(issuesTable)
+        .where(
+          and(
+            eq(issuesTable.companyId, companyId),
+            eq(issuesTable.originKind, "linear"),
+            eq(issuesTable.originId, issue.id),
+          ),
+        )
+        .limit(1);
+      const created = existing.length === 0;
+      if (created) {
+        const osIssue = await issues.create(companyId, {
+          title: issue.title,
+          description: `From Linear ${issue.identifier}: ${issue.url}\n\n${issue.description ?? ""}`,
+          assigneeAgentId,
+          status: "todo",
+          priority: "medium",
+          originKind: "linear",
+          originId: issue.id,
+        });
+        // Mutating action → activity log entry (repo guideline for server endpoints).
+        await logActivity(db, {
+          companyId,
+          actorType: "system",
+          actorId: "linear-os-sync",
+          agentId: assigneeAgentId,
+          action: "issue.created",
+          entityType: "issue",
+          entityId: osIssue.id,
+          details: {
+            source: "linear-bridge",
+            linearId: issue.id,
+            linearIdentifier: issue.identifier,
+            routedAgent: agentName,
+          },
+        });
+      }
+
+      // Idempotency guard #1: write `os:synced` back so we never re-dispatch. Linear has no
+      // atomic add-label, so set the full label-id set (existing + synced).
+      const labelIds = Array.from(new Set([...issue.labels.nodes.map((l) => l.id), SYNCED_LABEL_ID]));
+      await linear(
+        apiKey,
+        `mutation MarkSynced($id: String!, $labelIds: [String!]) {
+          issueUpdate(id: $id, input: { labelIds: $labelIds }) { success }
+        }`,
+        { id: issue.id, labelIds },
+      );
+
+      results.push({ linear: issue.identifier, agent: agentName, created });
+    } catch (err) {
+      results.push({
+        linear: issue.identifier,
+        agent: agentName,
+        created: false,
+        error: err instanceof Error ? err.message : "sync failed",
       });
     }
-
-    // Idempotency guard #1: write `os:synced` back so we never re-dispatch. Linear has no
-    // atomic add-label, so set the full label-id set (existing + synced).
-    const labelIds = Array.from(new Set([...issue.labels.nodes.map((l) => l.id), SYNCED_LABEL_ID]));
-    await linear(
-      apiKey,
-      `mutation MarkSynced($id: String!, $labelIds: [String!]) {
-        issueUpdate(id: $id, input: { labelIds: $labelIds }) { success }
-      }`,
-      { id: issue.id, labelIds },
-    );
-
-    results.push({ linear: issue.identifier, agent: agentName, created });
   }
   return results;
 }
 
 export function linearOsSyncRoutes(db: Db): Router {
   const router = Router();
-  // Vercel cron target (GET). Guarded by CRON_SECRET when set (Vercel sends
+  // Vercel cron target (GET). Requires CRON_SECRET (Vercel sends
   // `Authorization: Bearer <CRON_SECRET>` on cron requests). No-op if LINEAR_API_KEY is unset.
   router.get("/internal/linear-os-sync", async (req, res) => {
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
+    // Fail closed: an unset secret must NOT leave this mutating endpoint open.
+    if (!cronSecret) {
+      res.status(503).json({ error: "CRON_SECRET not configured" });
+      return;
+    }
+    if (req.headers.authorization !== `Bearer ${cronSecret}`) {
       res.status(401).json({ error: "unauthorized" });
       return;
     }
