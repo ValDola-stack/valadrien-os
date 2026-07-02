@@ -75,7 +75,7 @@ Legend: ✅ wired · ⚠️ partial / CLI-only · ❌ not connected
 | **Plan → phases** | **Traycer** (planner: Claude) | Issue → phased plan | ⚠️ editor-side (VS Code) | ❌ editor-bound, not in fleet |
 | **Build** | Claude Code, GitHub, Context7, gstack | Code + live library docs | ⚠️ `gh` CLI · ❌ Context7 MCP | agent worker + repo |
 | **Verify-vs-plan** | Traycer, `/verify`, `/qa` | Diff matches plan | ✅ skills | ✅ skills |
-| **Review** | **CodeRabbit**, Korije, `/code-review` | Bug-catch pre-merge (diversity) | CodeRabbit = GitHub app | ✅ Korije via webhook |
+| **Review** | **CodeRabbit** (gate), Korije (advisory), `/code-review` | Bug-catch pre-merge (diversity) | ✅ CodeRabbit = GitHub app (live) | ✅ CodeRabbit live · Korije auto-review retired (`.coderabbit.yaml`) |
 | **Ship** | Vercel, Supabase, `/ship` `/land-and-deploy` | Deploy + migrations | ✅ Vercel MCP · ⚠️ Supabase CLI | worker deploy creds needed |
 | **Observe** | Sentry, Braintrust, Vercel Analytics | Errors, LLM evals, perf | ❌ Sentry · ❌ Braintrust | ❌ |
 | **AI substrate** | gbrain + VoyageAI (`voyage-code-3`) | Semantic search over code + memory | ✅ live (embedding backfill rate-limited) | n/a |
@@ -84,8 +84,10 @@ Legend: ✅ wired · ⚠️ partial / CLI-only · ❌ not connected
 ### Known gaps (Phase-1 targets)
 1. **Context7, Sentry, Braintrust** not connected in Claude Code → agents build
    blind to current library APIs, prod errors, and eval regressions.
-2. **CodeRabbit** must be confirmed installed on the `ValDola-stack` org repos —
-   without it, "diversity at review" is theoretical.
+2. ~~**CodeRabbit** must be confirmed installed~~ **DONE** — CodeRabbit is installed
+   and active on `ValDola-stack/valadrien-os` (confirmed via live PR reviews). It is
+   the required, blocking non-Claude review gate per `CONTRIBUTING.md`; Korije's
+   internal auto-review is retired (`.coderabbit.yaml`).
 3. **Two issue trackers** — Linear (human/planning) + ValAdrien OS issues (VAL-*).
    Source-of-truth split **locked**; the one-way `Sentry/Braintrust → Linear → OS`
    bridge is implemented (Vercel cron). See §4.
@@ -96,7 +98,7 @@ Legend: ✅ wired · ⚠️ partial / CLI-only · ❌ not connected
 
 | Trigger | What fires | Mechanism |
 |---|---|---|
-| **Event** | PR opened → CodeRabbit + Korije review | GitHub webhook (Korije already wired) |
+| **Event** | PR opened → CodeRabbit review (blocking gate) | CodeRabbit GitHub app (live). Korije auto-review retired; webhook reviewer is spec-only (`docs/pr-reviewer-spec.md`) |
 | **Event** | Sentry error → Linear issue + ping Veye | Sentry alert rule → webhook *(to build)* |
 | **Event** | Session start → project picker | Claude Code hook (`project-picker.sh`, live) |
 | **On-demand** | `/spec` `/ship` `/code-review` `/stack` | slash commands |
@@ -112,7 +114,8 @@ Legend: ✅ wired · ⚠️ partial / CLI-only · ❌ not connected
   `Sentry/Braintrust → Linear → OS`. Implemented as a Vercel cron in
   `valadrien-os-server` (see `dotfiles/bridges/sentry-braintrust-to-linear-to-os.md`).
 - **Codex as second (review-only) reviewer** — optional non-Claude reviewer #2
-  alongside CodeRabbit. Decide once CodeRabbit is confirmed live.
+  alongside CodeRabbit (now confirmed live). Currently active on some PRs
+  (`chatgpt-codex-connector`); keep as advisory, not a required gate.
 
 ---
 

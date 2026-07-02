@@ -181,7 +181,14 @@ A change is done when all are true:
 4. Docs updated when behavior or commands change
 5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
 
-## 11. Fork-Specific: HenkDz/valadrien-os
+## 12. Fork-Specific: HenkDz/valadrien-os
+
+> **Not authoritative for this repo.** This section documents a *downstream*
+> fork (`HenkDz/valadrien-os`) inherited from upstream. **This repo is
+> `ValDola-stack/valadrien-os`; its authoritative coordinates (repo, working
+> branch, deploy targets) are in `CLAUDE.md`.** Agents must branch, open PRs, and
+> reason about deploys against `ValDola-stack/valadrien-os` `rebrand/valadrien-os`
+> per `CLAUDE.md` — not `HenkDz` / `feat/externalize-hermes-adapter`.
 
 This is a fork of `ValDola-stack/valadrien-os` with QoL patches and an **external-only** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/valadrien-os/tree/feat/externalize-hermes-adapter)).
 
