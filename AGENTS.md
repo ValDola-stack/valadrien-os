@@ -11,6 +11,8 @@ The current implementation target is V1 and is defined in `doc/SPEC-implementati
 
 Before making changes, read in this order:
 
+0. `CLAUDE.md` — ValAdrien dev-OS overlay: the loop, the operator LANE, and skill routing
+0. `DESIGN.md` — GLASSHOUSE design system (authoritative for all UI)
 1. `doc/GOAL.md`
 2. `doc/PRODUCT.md`
 3. `doc/SPEC-implementation.md`
@@ -19,6 +21,9 @@ Before making changes, read in this order:
 
 `doc/SPEC.md` is long-horizon product context.
 `doc/SPEC-implementation.md` is the concrete V1 build contract.
+
+> Authority: this file governs engineering; `CLAUDE.md` governs OS framing/lane;
+> `CONTRIBUTING.md` governs PR + review. Fork sections here supersede upstream sections.
 
 ## 3. Repo Map
 
