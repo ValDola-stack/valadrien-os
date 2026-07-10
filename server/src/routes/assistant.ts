@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { and, eq, ne } from "drizzle-orm";
 import { agents as agentsTable, type Db } from "@valadrien-os/db";
-import { badRequest } from "../errors.js";
+import { badRequest, notFound } from "../errors.js";
 import { companyService, costService, issueService } from "../services/index.js";
 import { assertCompanyAccess } from "./authz.js";
 
@@ -48,7 +48,7 @@ async function buildCompanyContext(db: Db, companyId: string): Promise<string> {
   const issues = issueService(db);
 
   const company = await companies.getById(companyId);
-  if (!company) throw badRequest("Company not found");
+  if (!company) throw notFound("Company not found");
 
   const monthStart = new Date();
   monthStart.setUTCDate(1);

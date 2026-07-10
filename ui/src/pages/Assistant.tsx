@@ -72,7 +72,8 @@ export function Assistant() {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Don't submit on the Enter that confirms an IME composition (CJK, etc.).
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void send();
     }
@@ -95,28 +96,38 @@ export function Assistant() {
             message="Ask about spend, agents, or issue flow — e.g. “How are we tracking against budget this month?” or “Which agents are idle and what's blocked?”"
           />
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-            <div
-              className={cn(
-                "max-w-[85%] rounded-[3px] border px-3 py-2 text-[13px] leading-relaxed",
-                m.role === "user"
-                  ? "border-primary/30 bg-primary/10 text-foreground"
-                  : "border-border bg-card/40 text-foreground",
-              )}
-            >
-              {m.role === "assistant" ? (
-                m.content ? (
-                  <MarkdownBody>{m.content}</MarkdownBody>
+        {messages.map((m, i) => {
+          // While the last assistant turn is still streaming, render plain text so we
+          // don't re-parse the whole growing markdown string on every token; swap to
+          // the full Markdown renderer once it settles.
+          const isStreamingLast = streaming && i === messages.length - 1;
+          return (
+            <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+              <div
+                className={cn(
+                  "max-w-[85%] rounded-[3px] border px-3 py-2 text-[13px] leading-relaxed",
+                  m.role === "user"
+                    ? "border-primary/30 bg-primary/10 text-foreground"
+                    : "border-border bg-card/40 text-foreground",
+                )}
+              >
+                {m.role === "assistant" ? (
+                  m.content ? (
+                    isStreamingLast ? (
+                      <span className="whitespace-pre-wrap">{m.content}</span>
+                    ) : (
+                      <MarkdownBody>{m.content}</MarkdownBody>
+                    )
+                  ) : (
+                    <ThinkingCursor />
+                  )
                 ) : (
-                  <ThinkingCursor />
-                )
-              ) : (
-                <span className="whitespace-pre-wrap">{m.content}</span>
-              )}
+                  <span className="whitespace-pre-wrap">{m.content}</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {error && (

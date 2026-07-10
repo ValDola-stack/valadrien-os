@@ -34,26 +34,40 @@ export async function streamAssistantChat(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let settled = false;
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    // SSE frames are separated by a blank line.
-    let sep: number;
-    while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-      const line = frame.split("\n").find((l) => l.startsWith("data:"));
-      if (!line) continue;
-      const payload = line.slice("data:".length).trim();
-      if (!payload) continue;
-      const evt = JSON.parse(payload) as { type: string; text?: string; error?: string };
-      if (evt.type === "delta" && evt.text) onDelta(evt.text);
-      else if (evt.type === "error") throw new Error(evt.error ?? "assistant stream error");
-      else if (evt.type === "done") return;
+      // SSE frames are separated by a blank line.
+      let sep: number;
+      while ((sep = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        const line = frame.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        const payload = line.slice("data:".length).trim();
+        if (!payload) continue;
+        const evt = JSON.parse(payload) as { type: string; text?: string; error?: string };
+        if (evt.type === "delta" && evt.text) onDelta(evt.text);
+        else if (evt.type === "error") {
+          settled = true;
+          throw new Error(evt.error ?? "assistant stream error");
+        } else if (evt.type === "done") {
+          settled = true;
+          return;
+        }
+      }
     }
+    // The stream ended without a done/error frame — the reply was truncated
+    // (proxy timeout, dropped connection, server crash). Surface it, don't
+    // let the caller treat a partial answer as a clean completion.
+    if (!settled) throw new Error("Assistant connection ended unexpectedly.");
+  } finally {
+    reader.releaseLock();
   }
 }
 
