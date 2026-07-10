@@ -123,6 +123,10 @@ function sanitizeMessages(raw: unknown): ChatMessage[] {
     return { role, content };
   });
   if (out[0]!.role !== "user") throw badRequest("the first message must be from the user");
+  // The model must be asked to continue after a user turn. A trailing assistant turn is
+  // a prefill, which claude-opus-4-8 rejects with a 400 — catch it here with a clean 400
+  // instead of an opaque mid-stream failure after headers are already flushed.
+  if (out[out.length - 1]!.role !== "user") throw badRequest("the last message must be from the user");
   return out;
 }
 
@@ -164,21 +168,33 @@ export function assistantRoutes(db: Db) {
       messages,
     });
 
-    // Abort the upstream request if the client disconnects.
-    req.on("close", () => stream.abort());
+    // The client may disconnect mid-stream, destroying the response socket. Writing to
+    // or ending an already-ended response throws and can crash the process, so guard
+    // every write/end and stop as soon as the client is gone.
+    let clientGone = false;
+    const send = (payload: unknown) => {
+      if (clientGone || res.writableEnded) return;
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
 
-    stream.on("text", (delta: string) => {
-      res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
+    req.on("close", () => {
+      clientGone = true;
+      stream.abort();
     });
+
+    stream.on("text", (delta: string) => send({ type: "delta", text: delta }));
 
     try {
       await stream.finalMessage();
-      res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+      send({ type: "done" });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "assistant stream failed";
-      res.write(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`);
+      // A client-disconnect abort rejects finalMessage(); there's no one to tell.
+      if (!clientGone) {
+        const message = err instanceof Error ? err.message : "assistant stream failed";
+        send({ type: "error", error: message });
+      }
     } finally {
-      res.end();
+      if (!res.writableEnded) res.end();
     }
   });
 
