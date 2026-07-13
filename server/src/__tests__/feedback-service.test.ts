@@ -156,7 +156,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
       {
         id: randomUUID(),
         companyId,
-        key: "ValDola-stack/valadrien-os/valadrien-os",
+        key: "paperclipai/paperclip/valadrien-os",
         slug: "valadrien-os",
         name: "ValadrienOs",
         markdown: "# ValadrienOs",
@@ -194,7 +194,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
           instructionsEntryFile: "AGENTS.md",
           instructionsFilePath: instructionsPath,
         },
-        ["ValDola-stack/valadrien-os/valadrien-os", "octo/research/public-skill"],
+        ["paperclipai/paperclip/valadrien-os", "octo/research/public-skill"],
       ),
       runtimeConfig: {
         heartbeat: {

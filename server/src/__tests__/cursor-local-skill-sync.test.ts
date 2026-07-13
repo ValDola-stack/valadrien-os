@@ -19,7 +19,7 @@ async function createSkillDir(root: string, name: string) {
 }
 
 describe("cursor local skill sync", () => {
-  const valadrienOsKey = "ValDola-stack/valadrien-os/valadrien-os";
+  const valadrienOsKey = "paperclipai/paperclip/valadrien-os";
   const cleanupDirs = new Set<string>();
 
   afterEach(async () => {

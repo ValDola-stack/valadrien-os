@@ -660,13 +660,13 @@ describe("applyRunScopedMentionedSkillKeys", () => {
     const originalConfig = {
       command: "codex",
       valadrienOsSkillSync: {
-        desiredSkills: ["ValDola-stack/valadrien-os/valadrien-os"],
+        desiredSkills: ["paperclipai/paperclip/valadrien-os"],
       },
     };
 
     const updatedConfig = applyRunScopedMentionedSkillKeys(originalConfig, [
       "company/company-1/release-changelog",
-      "ValDola-stack/valadrien-os/valadrien-os",
+      "paperclipai/paperclip/valadrien-os",
       "company/company-1/release-changelog",
     ]);
 
@@ -674,7 +674,7 @@ describe("applyRunScopedMentionedSkillKeys", () => {
       command: "codex",
       valadrienOsSkillSync: {
         desiredSkills: [
-          "ValDola-stack/valadrien-os/valadrien-os",
+          "paperclipai/paperclip/valadrien-os",
           "company/company-1/release-changelog",
         ],
       },
@@ -682,7 +682,7 @@ describe("applyRunScopedMentionedSkillKeys", () => {
     expect(originalConfig).toEqual({
       command: "codex",
       valadrienOsSkillSync: {
-        desiredSkills: ["ValDola-stack/valadrien-os/valadrien-os"],
+        desiredSkills: ["paperclipai/paperclip/valadrien-os"],
       },
     });
   });

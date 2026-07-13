@@ -12,7 +12,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe("opencode local skill sync", () => {
-  const valadrienOsKey = "ValDola-stack/valadrien-os/valadrien-os";
+  const valadrienOsKey = "paperclipai/paperclip/valadrien-os";
   const cleanupDirs = new Set<string>();
 
   afterEach(async () => {
