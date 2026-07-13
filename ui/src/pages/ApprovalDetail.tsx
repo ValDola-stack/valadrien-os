@@ -156,8 +156,8 @@ export function ApprovalDetail() {
       ? {
           label:
             (linkedIssues?.length ?? 0) > 1
-              ? "Review linked issues"
-              : "Review linked issue",
+              ? "Review linked tasks"
+              : "Review linked task",
           to: `/issues/${primaryLinkedIssue.identifier ?? primaryLinkedIssue.id}`,
         }
       : linkedAgentId
@@ -181,9 +181,9 @@ export function ApprovalDetail() {
                 <Sparkles className="h-3 w-3 text-status-success absolute -right-2 -top-1 animate-pulse" />
               </div>
               <div>
-                <p className="text-sm text-status-success font-medium">Approval confirmed</p>
-                <p className="text-xs text-status-success/90">
-                  Requesting agent was notified to review this approval and linked issues.
+                <p className="text-sm text-green-800 dark:text-green-100 font-medium">Approval confirmed</p>
+                <p className="text-xs text-green-700 dark:text-green-200/90">
+                  Requesting agent was notified to review this approval and linked tasks.
                 </p>
               </div>
             </div>
@@ -240,7 +240,7 @@ export function ApprovalDetail() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         {linkedIssues && linkedIssues.length > 0 && (
           <div className="pt-2 border-t border-border/60">
-            <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Linked Issues</p>
+            <p className="text-xs text-muted-foreground mb-1.5">Linked Tasks</p>
             <div className="space-y-1.5">
               {linkedIssues.map((issue) => (
                 <Link
@@ -255,8 +255,8 @@ export function ApprovalDetail() {
                 </Link>
               ))}
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2">
-              Linked issues remain open until the requesting agent follows up and closes them.
+            <p className="text-(length:--text-micro) text-muted-foreground mt-2">
+              Linked tasks remain open until the requesting agent follows up and closes them.
             </p>
           </div>
         )}

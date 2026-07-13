@@ -143,7 +143,7 @@ ALTER TABLE plugin_llm_wiki_3656981cf2.valadrien_os_page_bindings ALTER COLUMN s
 ALTER TABLE plugin_llm_wiki_3656981cf2.wiki_pages
   DROP CONSTRAINT IF EXISTS wiki_pages_company_id_wiki_id_path_key;
 -- Postgres truncates auto-generated unique constraint names to 63 chars (NAMEDATALEN-1).
--- The rebrand from `paperclip_*` (9 chars) to `valadrien_os_*` (12 chars) changed
+-- The rebrand from `valadrien_os_*` (9 chars) to `valadrien_os_*` (12 chars) changed
 -- where the truncation falls, so the names below differ from the pre-rebrand DROPs.
 -- See server/src/__tests__/plugin-database.test.ts "applies the bundled LLM Wiki
 -- migrations through the production validator" for the asserted shape.

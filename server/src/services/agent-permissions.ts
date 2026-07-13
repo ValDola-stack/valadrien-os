@@ -2,11 +2,13 @@ import { isFoundingAgentRole } from "@valadrien-os/shared";
 
 export type NormalizedAgentPermissions = Record<string, unknown> & {
   canCreateAgents: boolean;
+  canCreateSkills: boolean;
 };
 
 export function defaultPermissionsForRole(role: string): NormalizedAgentPermissions {
   return {
-    canCreateAgents: isFoundingAgentRole(role),
+    canCreateAgents: isFoundingAgentRole(role.trim().toLowerCase()),
+    canCreateSkills: true,
   };
 }
 
@@ -27,5 +29,9 @@ export function normalizeAgentPermissions(
       typeof record.canCreateAgents === "boolean"
         ? record.canCreateAgents
         : defaults.canCreateAgents,
+    canCreateSkills:
+      typeof record.canCreateSkills === "boolean"
+        ? record.canCreateSkills
+        : defaults.canCreateSkills,
   };
 }

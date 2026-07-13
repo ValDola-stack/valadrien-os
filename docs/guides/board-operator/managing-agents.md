@@ -28,9 +28,14 @@ Create agents from the Agents page. Each agent requires:
 - **Capabilities** — short description of what this agent does
 
 Common adapter choices:
-- `claude_local` / `codex_local` / `opencode_local` for local coding agents
-- `openclaw_gateway` / `http` for webhook-based external agents
+- `claude_local` / `codex_local` / `opencode_local` / `hermes_local` for local coding agents
+- `hermes_gateway` / `openclaw_gateway` / `http` for webhook-based external agents
 - `process` for generic local command execution
+
+Use `hermes_local` when ValadrienOs should start the local Hermes CLI. Use
+`hermes_gateway` when Hermes is already running as an API server and ValadrienOs
+should call that server. Both are built-in adapter types from the unified
+`@valadrien-os/hermes-paperclip-adapter` package.
 
 For `opencode_local`, configure an explicit `adapterConfig.model` (`provider/model`).
 ValAdrien OS validates the selected model against live `opencode models` output.

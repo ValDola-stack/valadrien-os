@@ -6,6 +6,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { agentUrl, cn } from "../lib/utils";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -162,14 +163,14 @@ import { getAdapterLabel } from "../adapters/adapter-display-registry";
 
 // GLASSHOUSE status tokens (CSS vars resolve fine as inline backgroundColor).
 const statusDotColor: Record<string, string> = {
-  running: "var(--status-running)",
-  active: "var(--status-success)",
-  paused: "var(--status-warning)",
-  idle: "var(--muted-foreground)",
-  error: "var(--status-error)",
-  terminated: "var(--muted-foreground)",
+  running: "var(--hex-22d3ee)",
+  active: "var(--hex-4ade80)",
+  paused: "var(--hex-facc15)",
+  idle: "var(--hex-facc15)",
+  error: "var(--hex-f87171)",
+  terminated: "var(--hex-a3a3a3)",
 };
-const defaultDotColor = "var(--muted-foreground)";
+const defaultDotColor = "var(--hex-a3a3a3)";
 
 // ── Main component ──────────────────────────────────────────────────────
 
@@ -458,7 +459,7 @@ export function OrgChart() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-9rem)] min-h-[420px] flex-col md:h-full md:min-h-0">
+    <div className="flex h-(--sz-calc-38) min-h-(--sz-420px) flex-col md:h-full md:min-h-0">
       <div className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight">Org</h1>
@@ -548,7 +549,7 @@ export function OrgChart() {
             <Minus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
           </button>
           <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-[10px] transition-colors hover:bg-accent sm:size-7"
+            className="flex size-9 items-center justify-center rounded border border-border bg-background text-(length:--text-nano) transition-colors hover:bg-accent sm:size-7"
             onClick={fitToScreen}
             title="Fit to screen"
             aria-label="Fit chart to screen"
@@ -611,12 +612,10 @@ export function OrgChart() {
             const cad = liveCadence(node.id);
 
             return (
-              <div
+              <Card
                 key={node.id}
                 data-org-card
-                className={cn(
-                  "absolute overflow-hidden bg-card border border-border rounded-[3px] hover:border-primary/45 transition-colors duration-150 cursor-pointer select-none",
-                )}
+                className="block absolute overflow-hidden py-0 hover:shadow-md hover:border-foreground/20 transition-(--tp-box-shadow-border-color) duration-150 cursor-pointer select-none"
                 style={{
                   left: node.x,
                   top: node.y,
@@ -660,22 +659,22 @@ export function OrgChart() {
                     <span className="text-sm font-semibold text-foreground leading-tight">
                       {node.name}
                     </span>
-                    <span className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+                    <span className="text-(length:--text-micro) text-muted-foreground leading-tight mt-0.5">
                       {agent?.title ?? roleLabel(node.role)}
                     </span>
                     {agent && (
-                      <span className="text-[10px] text-muted-foreground/60 font-mono leading-tight mt-1">
+                      <span className="text-(length:--text-nano) text-muted-foreground/60 font-mono leading-tight mt-1">
                         {getAdapterLabel(agent.adapterType)}
                       </span>
                     )}
                     {agent && agent.capabilities && (
-                      <span className="text-[10px] text-muted-foreground/80 leading-tight mt-1 line-clamp-2">
+                      <span className="text-(length:--text-nano) text-muted-foreground/80 leading-tight mt-1 line-clamp-2">
                         {agent.capabilities}
                       </span>
                     )}
                   </div>
                 </div>
-              </div>
+              </Card>
             );
           })}
         </div>

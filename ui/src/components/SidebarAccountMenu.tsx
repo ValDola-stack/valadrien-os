@@ -3,11 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   LogOut,
+  Megaphone,
   type LucideIcon,
-  Moon,
-  Settings,
   UserRound,
-  Sun,
   UserRoundPen,
 } from "lucide-react";
 import type { DeploymentMode } from "@valadrien-os/shared";
@@ -15,17 +13,19 @@ import { Link } from "@/lib/router";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
-import { useTheme } from "../context/ThemeContext";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn } from "../lib/utils";
+import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
+import { ThemeToggle } from "./ThemeToggle";
+import { SidebarServerInfo } from "./SidebarServerInfo";
+import { Badge } from "@/components/ui/badge";
 
-const PROFILE_SETTINGS_PATH = "/instance/settings/profile";
+const PROFILE_SETTINGS_PATH = "/company/settings/instance/profile";
 const DOCS_URL = "https://docs.TODO_DOMAIN/";
+const FEEDBACK_URL = "https://valadrien-os.ing/feedback";
 
 interface SidebarAccountMenuProps {
   deploymentMode?: DeploymentMode;
-  instanceSettingsTarget: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   version?: string | null;
@@ -103,15 +103,14 @@ function MenuAction({ label, description, icon: Icon, onClick, href, external = 
 
 export function SidebarAccountMenu({
   deploymentMode,
-  instanceSettingsTarget,
   open: controlledOpen,
   onOpenChange,
   version,
 }: SidebarAccountMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const queryClient = useQueryClient();
-  const { isMobile, setSidebarOpen } = useSidebar();
-  const { theme, toggleTheme } = useTheme();
+  const { isMobile, setSidebarOpen, collapsed, peeking } = useSidebar();
+  const rail = collapsed && !peeking;
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
   const { data: session } = useQuery({
@@ -146,14 +145,14 @@ export function SidebarAccountMenu({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-medium text-foreground/80 transition-colors hover:bg-accent/50 hover:text-foreground"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-(length:--text-compact) font-medium text-foreground/80 transition-colors hover:bg-accent/50 hover:text-foreground"
             aria-label="Open account menu"
           >
             <Avatar size="sm">
               {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
-            <span className="min-w-0 flex-1 truncate">{displayName}</span>
+            <span className={cn("min-w-0 flex-1 truncate", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>{displayName}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -174,9 +173,9 @@ export function SidebarAccountMenu({
               <div className="min-w-0 flex-1 pt-1">
                 <div className="flex items-center gap-2">
                   <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <Badge variant="ghost" className="bg-accent text-(length:--text-nano) font-semibold uppercase tracking-wide text-muted-foreground">
                     {accountBadge}
-                  </span>
+                  </Badge>
                 </div>
                 <p className="truncate text-sm text-muted-foreground">{secondaryLabel}</p>
                 {version ? (
@@ -201,13 +200,6 @@ export function SidebarAccountMenu({
                 onClick={closeNavigationChrome}
               />
               <MenuAction
-                label="Instance settings"
-                description="Jump back to the last settings page you opened."
-                icon={Settings}
-                href={instanceSettingsTarget}
-                onClick={closeNavigationChrome}
-              />
-              <MenuAction
                 label="Documentation"
                 description="Open ValadrienOs docs in a new tab."
                 icon={BookOpen}
@@ -216,14 +208,14 @@ export function SidebarAccountMenu({
                 onClick={() => setOpen(false)}
               />
               <MenuAction
-                label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                description="Toggle the app appearance."
-                icon={theme === "dark" ? Sun : Moon}
-                onClick={() => {
-                  toggleTheme();
-                  setOpen(false);
-                }}
+                label="Feedback"
+                description="Share feedback or report an issue."
+                icon={Megaphone}
+                href={FEEDBACK_URL}
+                external
+                onClick={() => setOpen(false)}
               />
+              <ThemeToggle variant="menu-action" onAfterToggle={() => setOpen(false)} />
               {deploymentMode === "authenticated" ? (
                 <button
                   type="button"
@@ -247,6 +239,7 @@ export function SidebarAccountMenu({
                   </span>
                 </button>
               ) : null}
+              <SidebarServerInfo />
             </div>
           </div>
         </PopoverContent>

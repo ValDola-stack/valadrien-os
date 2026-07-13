@@ -12,6 +12,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { Badge } from "@/components/ui/badge";
 
 type StatusFilter = "pending" | "all";
 
@@ -97,12 +98,12 @@ export function Approvals() {
         <Tabs value={statusFilter} onValueChange={(v) => navigate(`/approvals/${v}`)}>
           <PageTabBar items={[
             { value: "pending", label: <>Pending{pendingCount > 0 && (
-              <span className={cn(
-                "ml-1.5 rounded-[2px] px-1.5 py-0.5 text-[10px] font-medium",
-                "bg-status-warning/15 text-status-warning"
+              <Badge variant="ghost" className={cn(
+                "ml-1.5 px-1.5 text-(length:--text-nano)",
+                "bg-yellow-500/20 text-yellow-500"
               )}>
                 {pendingCount}
-              </span>
+              </Badge>
             )}</> },
             { value: "all", label: "All" },
           ]} />

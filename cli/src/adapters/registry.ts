@@ -1,11 +1,12 @@
 import type { CLIAdapterModule } from "@valadrien-os/adapter-utils";
-import { printAcpxStreamEvent } from "@valadrien-os/adapter-acpx-local/cli";
 import { printClaudeStreamEvent } from "@valadrien-os/adapter-claude-local/cli";
 import { printCodexStreamEvent } from "@valadrien-os/adapter-codex-local/cli";
 import { printCursorStreamEvent } from "@valadrien-os/adapter-cursor-local/cli";
 import { printCursorCloudEvent } from "@valadrien-os/adapter-cursor-cloud/cli";
 import { printGeminiStreamEvent } from "@valadrien-os/adapter-gemini-local/cli";
 import { printGrokStreamEvent } from "@valadrien-os/adapter-grok-local/cli";
+import { formatStdoutEvent as printHermesGatewayStreamEvent } from "@valadrien-os/hermes-paperclip-adapter/gateway/cli";
+import { printHermesStreamEvent } from "@valadrien-os/hermes-paperclip-adapter/cli";
 import { printOpenCodeStreamEvent } from "@valadrien-os/adapter-opencode-local/cli";
 import { printPiStreamEvent } from "@valadrien-os/adapter-pi-local/cli";
 import { printOpenClawGatewayStreamEvent } from "@valadrien-os/adapter-openclaw-gateway/cli";
@@ -15,11 +16,6 @@ import { httpCLIAdapter } from "./http/index.js";
 const claudeLocalCLIAdapter: CLIAdapterModule = {
   type: "claude_local",
   formatStdoutEvent: printClaudeStreamEvent,
-};
-
-const acpxLocalCLIAdapter: CLIAdapterModule = {
-  type: "acpx_local",
-  formatStdoutEvent: printAcpxStreamEvent,
 };
 
 const codexLocalCLIAdapter: CLIAdapterModule = {
@@ -57,6 +53,16 @@ const grokLocalCLIAdapter: CLIAdapterModule = {
   formatStdoutEvent: printGrokStreamEvent,
 };
 
+const hermesGatewayCLIAdapter: CLIAdapterModule = {
+  type: "hermes_gateway",
+  formatStdoutEvent: printHermesGatewayStreamEvent,
+};
+
+const hermesLocalCLIAdapter: CLIAdapterModule = {
+  type: "hermes_local",
+  formatStdoutEvent: printHermesStreamEvent,
+};
+
 const openclawGatewayCLIAdapter: CLIAdapterModule = {
   type: "openclaw_gateway",
   formatStdoutEvent: printOpenClawGatewayStreamEvent,
@@ -64,7 +70,6 @@ const openclawGatewayCLIAdapter: CLIAdapterModule = {
 
 const adaptersByType = new Map<string, CLIAdapterModule>(
   [
-    acpxLocalCLIAdapter,
     claudeLocalCLIAdapter,
     codexLocalCLIAdapter,
     openCodeLocalCLIAdapter,
@@ -73,6 +78,8 @@ const adaptersByType = new Map<string, CLIAdapterModule>(
     cursorCloudCLIAdapter,
     geminiLocalCLIAdapter,
     grokLocalCLIAdapter,
+    hermesGatewayCLIAdapter,
+    hermesLocalCLIAdapter,
     openclawGatewayCLIAdapter,
     processCLIAdapter,
     httpCLIAdapter,

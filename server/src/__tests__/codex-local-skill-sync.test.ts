@@ -12,8 +12,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe("codex local skill sync", () => {
-  const valadrienOsKey = "ValDola-stack/valadrien-os/valadrien-os";
-  const createAgentKey = "ValDola-stack/valadrien-os/valadrien-os-create-agent";
+  const valadrienOsKey = "paperclipai/paperclip/valadrien-os";
   const cleanupDirs = new Set<string>();
 
   afterEach(async () => {
@@ -42,11 +41,7 @@ describe("codex local skill sync", () => {
     const before = await listCodexSkills(ctx);
     expect(before.mode).toBe("ephemeral");
     expect(before.desiredSkills).toContain(valadrienOsKey);
-    expect(before.desiredSkills).toContain(createAgentKey);
-    expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.required).toBe(true);
     expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("configured");
-    expect(before.entries.find((entry) => entry.key === createAgentKey)?.required).toBe(true);
-    expect(before.entries.find((entry) => entry.key === createAgentKey)?.state).toBe("configured");
     expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.detail).toContain("CODEX_HOME/skills/");
   });
 
@@ -74,31 +69,6 @@ describe("codex local skill sync", () => {
     await expect(fs.lstat(path.join(codexHome, "skills", "valadrien-os"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-  });
-
-  it("keeps required bundled ValadrienOs skills configured even when the desired set is emptied", async () => {
-    const codexHome = await makeTempDir("valadrien-os-codex-skill-required-");
-    cleanupDirs.add(codexHome);
-
-    const configuredCtx = {
-      agentId: "agent-2",
-      companyId: "company-1",
-      adapterType: "codex_local",
-      config: {
-        env: {
-          CODEX_HOME: codexHome,
-        },
-        valadrienOsSkillSync: {
-          desiredSkills: [],
-        },
-      },
-    } as const;
-
-    const after = await syncCodexSkills(configuredCtx, []);
-    expect(after.desiredSkills).toContain(valadrienOsKey);
-    expect(after.desiredSkills).toContain(createAgentKey);
-    expect(after.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("configured");
-    expect(after.entries.find((entry) => entry.key === createAgentKey)?.state).toBe("configured");
   });
 
   it("normalizes legacy flat ValadrienOs skill refs before reporting configured state", async () => {

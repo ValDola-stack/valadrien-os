@@ -8,6 +8,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +36,8 @@ export function ProfileSettings() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: "Instance Settings" },
+      { label: "Settings", href: "/company/settings" },
+      { label: "Instance settings", href: "/company/settings/instance/general" },
       { label: "Profile" },
     ]);
   }, [setBreadcrumbs]);
@@ -156,10 +158,11 @@ export function ProfileSettings() {
       ) : null}
 
       <section className="space-y-8">
-        <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-card">
-          <div className="absolute inset-x-0 top-0 h-32 bg-secondary/40" />
+        <Card className="block relative overflow-hidden rounded-(--rad-28) border-border/70">
+          <div className="absolute inset-x-0 top-0 h-32 bg-(image:--gradient-extract-26)" />
+          <div className="absolute inset-0 bg-(image:--gradient-extract-7)" />
           <div className="relative p-6 pt-10">
-            <div className="flex flex-wrap items-end gap-5 rounded-[24px] border border-border/70 bg-background/92 p-5 backdrop-blur-sm">
+            <div className="flex flex-wrap items-end gap-5 rounded-(--rad-24) border border-border/70 bg-background/92 p-5 shadow-(--shadow-extract-18) backdrop-blur-sm">
               <div className="space-y-3">
                 <label
                   htmlFor={avatarInputId}
@@ -223,7 +226,7 @@ export function ProfileSettings() {
               </div>
             </div>
           </div>
-        </div>
+        </Card>
 
         <form
           className="grid gap-6 md:grid-cols-2"

@@ -106,20 +106,20 @@ function MetricTile({
   budgetPercent?: number;
 }) {
   return (
-    <div className="border border-border p-4">
-      <div className="flex items-start justify-between gap-3">
+    <Card className="block p-4">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+          <div className="text-(length:--text-micro) uppercase tracking-(--tracking-eyebrow) text-muted-foreground">{label}</div>
           <div
             className={cn(
-              "mt-2 font-mono text-2xl font-medium tabular-nums",
+              "mt-2 text-2xl font-semibold tabular-nums",
               accent === "money" && "text-primary",
               accent === "credit" && "text-status-success",
             )}
           >
             {value}
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-muted-foreground">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-muted-foreground">
             {delta ? (
               <span
                 className={cn(
@@ -138,12 +138,12 @@ function MetricTile({
             <span className="min-w-0">{subtitle}</span>
           </div>
         </div>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-border">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border">
           <Icon className="h-4 w-4 text-muted-foreground" />
         </div>
       </div>
       {typeof budgetPercent === "number" ? <BudgetBar percent={budgetPercent} /> : null}
-    </div>
+    </Card>
   );
 }
 
@@ -638,6 +638,7 @@ export function Costs() {
                   size="sm"
                   className={preset === key ? "bg-primary/15 text-foreground hover:bg-primary/20" : ""}
                   onClick={() => setPreset(key)}
+                  aria-pressed={preset === key}
                 >
                   {PRESET_LABELS[key]}
                 </Button>
@@ -755,7 +756,7 @@ export function Costs() {
                 </div>
               ) : null}
 
-              <div className="grid gap-4 xl:grid-cols-[1.3fr,1fr]">
+              <div className="grid gap-4 xl:grid-cols-(--gtc-31)">
                 <Card>
                   <CardHeader className="px-5 pt-5 pb-2">
                     <CardTitle className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -778,8 +779,8 @@ export function Costs() {
                         </div>
                       </div>
                       <div className="border border-border px-4 py-3 text-right">
-                        <div className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">usage</div>
-                        <div className="mt-1 font-mono text-lg font-medium tabular-nums">
+                        <div className="text-(length:--text-micro) uppercase tracking-(--tracking-eyebrow) text-muted-foreground">usage</div>
+                        <div className="mt-1 text-lg font-medium tabular-nums">
                           {formatTokens(inferenceTokenTotal)}
                         </div>
                       </div>
@@ -789,12 +790,12 @@ export function Costs() {
                         <div className="h-2 overflow-hidden bg-muted">
                           <div
                             className={cn(
-                              "h-full transition-[width,background-color] duration-150",
+                              "h-full transition-(--tp-width-background-color) duration-150",
                               spendData.summary.utilizationPercent > 90
-                                ? "bg-status-error"
+                                ? "bg-(--status-task-blocked)"
                                 : spendData.summary.utilizationPercent > 70
-                                  ? "bg-status-warning"
-                                  : "bg-status-success",
+                                  ? "bg-(--status-task-todo)"
+                                  : "bg-(--status-task-done)",
                             )}
                             style={{ width: `${Math.min(100, spendData.summary.utilizationPercent)}%` }}
                           />
@@ -816,7 +817,7 @@ export function Costs() {
                 />
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-[1.25fr,0.95fr]">
+              <div className="grid gap-4 xl:grid-cols-(--gtc-32)">
                 <Card>
                   <CardHeader className="px-5 pt-5 pb-2">
                     <CardTitle className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -909,10 +910,8 @@ export function Costs() {
                 <div className="space-y-4">
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">
-                      <CardTitle className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        By project
-                      </CardTitle>
-                      <CardDescription>Run costs attributed through project-linked issues.</CardDescription>
+                      <CardTitle className="text-base">By project</CardTitle>
+                      <CardDescription>Run costs attributed through project-linked tasks.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2 px-5 pb-5 pt-2">
                       {(spendData?.byProject.length ?? 0) === 0 ? (
@@ -945,7 +944,7 @@ export function Costs() {
             <p className="text-sm text-destructive">{(budgetError as Error).message}</p>
           ) : (
             <>
-              <Card className="border-border">
+              <Card className="border-border/70 bg-(image:--gradient-extract-2)">
                 <CardHeader className="px-5 pt-5 pb-3">
                   <CardTitle className="font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Budget control plane
@@ -1182,7 +1181,7 @@ export function Costs() {
                 eventCount={financeData?.summary.eventCount ?? 0}
               />
 
-              <div className="grid gap-4 xl:grid-cols-[1.2fr,0.95fr]">
+              <div className="grid gap-4 xl:grid-cols-(--gtc-33)">
                 <div className="space-y-4">
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">

@@ -42,11 +42,9 @@ Session routing fields:
 - sessionKeyStrategy (string, optional): issue (default), fixed, or run
 - sessionKey (string, optional): fixed session key when strategy=fixed (default valadrien-os)
 
-Standard outbound payload additions:
-- valadrien-os (object): standardized ValadrienOs context added to every gateway agent request
-- valadrien-os.workspace (object, optional): resolved execution workspace for this run
-- valadrien-os.workspaces (array, optional): additional workspace hints ValadrienOs exposed to the run
-- valadrien-os.workspaceRuntime (object, optional): reserved workspace runtime metadata when explicitly supplied outside normal heartbeat execution
+Wake payload notes:
+- ValadrienOs wake context is embedded into the generated message text
+- No top-level valadrien-os field is sent; the gateway agent schema rejects unknown root params
 
 Standard result metadata supported:
 - meta.runtimeServices (array, optional): normalized adapter-managed runtime service reports

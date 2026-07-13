@@ -71,6 +71,8 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
             e.stopPropagation();
             setExpanded(!expanded);
           }}
+          aria-label={`${goal.title} subtree`}
+          aria-expanded={expanded}
         >
           <ChevronRight
             className={cn("h-3 w-3 text-muted-foreground transition-transform", expanded && "rotate-90")}

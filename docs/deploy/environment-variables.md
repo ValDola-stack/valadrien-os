@@ -52,20 +52,5 @@ These are set automatically by the server when invoking agents:
 
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key (for Claude Local adapter) |
-| `OPENAI_API_KEY` | OpenAI API key (for Codex Local adapter) |
-
-## Authenticated public deployment (Vercel)
-
-Required when `VALADRIEN_OS_DEPLOYMENT_MODE=authenticated` and `VALADRIEN_OS_DEPLOYMENT_EXPOSURE=public`:
-
-| Variable | Description |
-| -------- | ----------- |
-| `BETTER_AUTH_SECRET` | Session signing secret (32+ bytes); set in Vercel env, never in git |
-| `VALADRIEN_OS_AUTH_PUBLIC_BASE_URL` | Public origin, e.g. `https://os.valadrien.dev` — must match browser URL |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | Comma-separated allowed origins (production + preview if needed) |
-| `VALADRIEN_OS_AUTH_BASE_URL_MODE` | Use `explicit` when public URL is set manually |
-
-URL-related vars (`VALADRIEN_OS_API_URL`, `VALADRIEN_OS_AUTH_PUBLIC_BASE_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`) must match the URL in the browser bar exactly.
-
-See [troubleshooting.md](./troubleshooting.md) for `ENOTFOUND`, `FUNCTION_INVOCATION_FAILED`, and login redirect issues.
+| `ANTHROPIC_API_KEY` | Anthropic API key (for Claude Code adapter) |
+| `OPENAI_API_KEY` | OpenAI API key (for Codex adapter) |

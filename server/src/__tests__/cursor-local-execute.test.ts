@@ -288,8 +288,6 @@ describe("cursor execute", () => {
             {
               name: "valadrien-os",
               source: valadrienOsDir,
-              required: true,
-              requiredReason: "Bundled ValadrienOs skills are always available for local adapters.",
             },
             {
               name: "ascii-heart",

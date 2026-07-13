@@ -1,3 +1,5 @@
+import type { ServerInfoSnapshot } from "@valadrien-os/shared";
+
 export type DevServerHealthStatus = {
   enabled: true;
   restartRequired: boolean;
@@ -29,6 +31,7 @@ export type HealthStatus = {
   features?: {
     companyDeletionEnabled?: boolean;
   };
+  serverInfo?: ServerInfoSnapshot;
   devServer?: DevServerHealthStatus;
 };
 

@@ -9,7 +9,7 @@ const VALADRIEN_OS_ART = [
   "╚═╝     ╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝╚═╝     ",
 ] as const;
 
-const TAGLINE = "Open-source orchestration for zero-human companies";
+const TAGLINE = "The app people use to manage AI agents for work";
 
 export function printValadrienOsCliBanner(): void {
   const lines = [

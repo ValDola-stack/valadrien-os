@@ -1,13 +1,14 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ValDola-stack/valadrien-os/master/doc/assets/header.png" alt="ValAdrien OS — runs your business" width="720" />
+  <img src="https://raw.githubusercontent.com/paperclipai/paperclip/master/doc/assets/banner.jpg" alt="ValadrienOs is the app people use to manage AI agents for work." width="720" />
 </p>
 
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
-  <a href="https://TODO_DOMAIN/docs"><strong>Docs</strong></a> &middot;
-  <a href="https://github.com/ValDola-stack/valadrien-os"><strong>GitHub</strong></a> &middot;
-  <a href="https://TODO_DISCORD"><strong>Discord</strong></a> &middot;
-  <a href="https://x.com/TODO_TWITTER"><strong>Twitter</strong></a>
+  <a href="https://docs.valadrien-os.ing"><strong>Docs</strong></a> &middot;
+  <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
+  <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a> &middot;
+  <a href="https://x.com/valadrien-osing"><strong>Twitter</strong></a> &middot;
+  <a href="https://valadrien-os.ing"><strong>Website</strong></a>
 </p>
 
 <p align="center">
@@ -24,15 +25,15 @@
 
 <br/>
 
-## What is ValAdrien OS?
+# ValadrienOs is the app people use to manage AI agents for work.
 
-# Open-source orchestration for zero-human companies
+Open-source orchestration for teams of AI agents.
 
-**If OpenClaw is an _employee_, ValAdrien OS is the _company_**
+**If OpenClaw is an _employee_, ValadrienOs is the _company_.**
 
-ValAdrien OS is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
+ValadrienOs is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track work and costs from one dashboard.
 
-It looks like a task manager — but under the hood it has org charts, budgets, governance, goal alignment, and agent coordination.
+It looks like a task manager. Under the hood: org charts, budgets, governance, goal alignment, and agent coordination.
 
 **Manage business goals, not pull requests.**
 
@@ -41,10 +42,6 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 | **01** | Define the goal | _"Build the #1 AI note-taking app to $1M MRR."_                    |
 | **02** | Hire the team   | CEO, CTO, engineers, designers, marketers — any bot, any provider. |
 | **03** | Approve and run | Review strategy. Set budgets. Hit go. Monitor from the dashboard.  |
-
-<br/>
-
-> **COMING SOON: Clipmart** — Download and run entire companies with one click. Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your ValAdrien OS instance in seconds.
 
 <br/>
 
@@ -113,7 +110,7 @@ Every conversation traced. Every decision explained. Full tool-call tracing and 
 <tr>
 <td align="center">
 <h3>🛡️ Governance</h3>
-You're the board. Approve hires, override strategy, pause or terminate any agent — at any time.
+Approve hires, override strategy, pause or terminate any agent — at any time.
 </td>
 <td align="center">
 <h3>📊 Org Chart</h3>
@@ -157,7 +154,116 @@ ValAdrien OS handles the hard orchestration details correctly.
 
 <br/>
 
-## What ValAdrien OS is not
+## What's Under the Hood
+
+ValadrienOs is a full control plane, not a wrapper. Before you build any of this yourself, know that it already exists:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                       PAPERCLIP SERVER                       │
+│                                                              │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
+│  │Identity & │  │  Work &   │  │ Heartbeat │  │Governance │  │
+│  │  Access   │  │   Tasks   │  │ Execution │  │& Approvals│  │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
+│                                                              │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
+│  │ Org Chart │  │Workspaces │  │  Plugins  │  │  Budget   │  │
+│  │ & Agents  │  │ & Runtime │  │           │  │ & Costs   │  │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
+│                                                              │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  │
+│  │ Routines  │  │ Secrets & │  │ Activity  │  │  Company  │  │
+│  │& Schedules│  │  Storage  │  │ & Events  │  │Portability│  │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘  │
+└──────────────────────────────────────────────────────────────┘
+         ▲              ▲              ▲              ▲
+   ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐
+   │  Claude   │  │   Codex   │  │   CLI     │  │ HTTP/web  │
+   │   Code    │  │           │  │  agents   │  │   bots    │
+   └───────────┘  └───────────┘  └───────────┘  └───────────┘
+```
+
+### The Systems
+
+<table>
+<tr>
+<td width="50%">
+
+**Identity & Access** — Two deployment modes (trusted local or authenticated), board users, agent API keys, short-lived run JWTs, company memberships, invite flows, and OpenClaw onboarding. Every mutating request is traced to an actor.
+
+</td>
+<td width="50%">
+
+**Org Chart & Agents** — Agents have roles, titles, reporting lines, permissions, and budgets. Adapter examples match the diagram: Claude Code, Codex, CLI agents such as Cursor/Gemini/bash, HTTP/webhook bots such as OpenClaw, and external adapter plugins. If it can receive a heartbeat, it's hired.
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Work & Task System** — Issues carry company/project/goal/parent links, atomic checkout with execution locks, first-class blocker dependencies, comments, documents, attachments, work products, labels, and inbox state. No double-work, no lost context.
+
+</td>
+<td>
+
+**Heartbeat Execution** — DB-backed wakeup queue with coalescing, budget checks, workspace resolution, secret injection, skill loading, and adapter invocation. Runs produce structured logs, cost events, session state, and audit trails. Recovery handles orphaned runs automatically.
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Workspaces & Runtime** — Project workspaces, isolated execution workspaces (git worktrees, operator branches), and runtime services (dev servers, preview URLs). Agents work in the right directory with the right context every time.
+
+</td>
+<td>
+
+**Governance & Approvals** — Board approval workflows, execution policies with review/approval stages, decision tracking, budget hard-stops, agent pause/resume/terminate, and full audit logging. Nothing ships without your sign-off.
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Budget & Cost Control** — Token and cost tracking by company, agent, project, goal, issue, provider, and model. Scoped budget policies with warning thresholds and hard stops. Overspend pauses agents and cancels queued work automatically.
+
+</td>
+<td>
+
+**Routines & Schedules** — Recurring tasks with cron, webhook, and API triggers. Concurrency and catch-up policies. Each routine execution creates a tracked issue and wakes the assigned agent — no manual kick-offs needed.
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Plugins** — Instance-wide plugin system with out-of-process workers, capability-gated host services, job scheduling, tool exposure, and UI contributions. Extend ValadrienOs without forking it.
+
+</td>
+<td>
+
+**Secrets & Storage** — Instance and company secrets, encrypted local storage, provider-backed object storage, attachments, and work products. Sensitive values stay out of prompts unless a scoped run explicitly needs them.
+
+</td>
+</tr>
+<tr>
+<td>
+
+**Activity & Events** — Mutating actions, heartbeat state changes, cost events, approvals, comments, and work products are recorded as durable activity so operators can audit what happened and why.
+
+</td>
+<td>
+
+**Company Portability** — Export and import entire organizations — agents, skills, projects, routines, and issues — with secret scrubbing and collision handling. One deployment, many companies, complete data isolation.
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+## What ValadrienOs is not
 
 |                              |                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -208,7 +314,7 @@ This starts the API server at `http://localhost:3100`. An embedded PostgreSQL da
 **What does a typical setup look like?**
 Locally, a single Node.js process manages an embedded Postgres and local file storage. For production, point it at your own Postgres and deploy however you like. Configure projects, agents, and goals — the agents take care of the rest.
 
-If you're a solo-entreprenuer you can use Tailscale to access ValAdrien OS on the go. Then later you can deploy to e.g. Vercel when you need it.
+If you're a solo entrepreneur you can use Tailscale to access ValadrienOs on the go. Then later you can deploy to e.g. Vercel when you need it.
 
 **Can I run multiple companies?**
 Yes. A single deployment can run an unlimited number of companies with complete data isolation.
@@ -271,19 +377,41 @@ See [doc/DEVELOPING.md](https://github.com/ValDola-stack/valadrien-os/blob/maste
 - ✅ Skills Manager
 - ✅ Scheduled Routines
 - ✅ Better Budgeting
-- ⚪ Artifacts & Deployments
-- ⚪ CEO Chat
-- ⚪ MAXIMIZER MODE
+- ✅ Agent Reviews and Approvals
 - ✅ Multiple Human Users
-- ⚪ Cloud / Sandbox agents (e.g. Cursor / e2b agents)
+- ⚪ Cloud / Sandbox agents (e.g. Cursor / e2b / Novita agents)
+- ⚪ Artifacts & Work Products
+- ⚪ Memory / Knowledge
+- ⚪ Enforced Outcomes
+- ⚪ MAXIMIZER MODE
+- ⚪ Deep Planning
+- ⚪ Work Queues
+- ⚪ Self-Organization
+- ⚪ Automatic Organizational Learning
+- ⚪ CEO Chat
 - ⚪ Cloud deployments
 - ⚪ Desktop App
+
+This is the short roadmap preview. See the full roadmap in [ROADMAP.md](https://github.com/paperclipai/paperclip/blob/master/ROADMAP.md).
 
 <br/>
 
 ## Community & Plugins
 
 Find Plugins and more at [awesome-valadrien-os](https://github.com/gsxdsm/awesome-valadrien-os)
+
+## Telemetry
+
+ValadrienOs collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
+
+Telemetry is **enabled by default** and can be disabled with any of the following:
+
+| Method               | How                                                     |
+| -------------------- | ------------------------------------------------------- |
+| Environment variable | `VALADRIEN_OS_TELEMETRY_DISABLED=1`                        |
+| Standard convention  | `DO_NOT_TRACK=1`                                        |
+| CI environments      | Automatically disabled when `CI=true`                   |
+| Config file          | Set `telemetry.enabled: false` in your ValadrienOs config |
 
 ## Contributing
 
@@ -302,7 +430,7 @@ We welcome contributions. See the [contributing guide](https://github.com/ValDol
 
 ## License
 
-MIT &copy; 2026 ValAdrien OS
+MIT &copy; 2026 [ValadrienOs Labs, Inc](https://valadrien-os.ing)
 
 ## Star History
 
@@ -313,9 +441,5 @@ MIT &copy; 2026 ValAdrien OS
 ---
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ValDola-stack/valadrien-os/master/doc/assets/footer.jpg" alt="" width="720" />
-</p>
-
-<p align="center">
-  <sub>Open source under MIT. Built for people who want to run companies, not babysit agents.</sub>
+  <sub>Open source under MIT. Built for people who want to get work done, not babysit agents.</sub>
 </p>

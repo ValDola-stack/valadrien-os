@@ -5,11 +5,6 @@
     "publishFromCi": false
   },
   {
-    "dir": "packages/adapters/acpx-local",
-    "name": "@valadrien-os/adapter-acpx-local",
-    "publishFromCi": false
-  },
-  {
     "dir": "packages/adapters/claude-local",
     "name": "@valadrien-os/adapter-claude-local",
     "publishFromCi": false
@@ -40,6 +35,16 @@
     "publishFromCi": false
   },
   {
+    "dir": "packages/adapters/hermes",
+    "name": "@valadrien-os/hermes-paperclip-adapter",
+    "publishFromCi": false
+  },
+  {
+    "dir": "packages/adapters/hermes-gateway",
+    "name": "@valadrien-os/adapter-hermes-gateway",
+    "publishFromCi": false
+  },
+  {
     "dir": "packages/adapters/opencode-local",
     "name": "@valadrien-os/adapter-opencode-local",
     "publishFromCi": false
@@ -57,6 +62,16 @@
   {
     "dir": "packages/shared",
     "name": "@valadrien-os/shared",
+    "publishFromCi": false
+  },
+  {
+    "dir": "packages/skills-catalog",
+    "name": "@valadrien-os/skills-catalog",
+    "publishFromCi": false
+  },
+  {
+    "dir": "packages/teams-catalog",
+    "name": "@valadrien-os/teams-catalog",
     "publishFromCi": false
   },
   {
@@ -117,6 +132,16 @@
   {
     "dir": "packages/plugins/sandbox-providers/modal",
     "name": "@valadrien-os/plugin-modal",
+    "publishFromCi": false
+  },
+  {
+    "dir": "packages/plugins/sandbox-providers/kubernetes",
+    "name": "@valadrien-os/plugin-kubernetes",
+    "publishFromCi": false
+  },
+  {
+    "dir": "packages/plugins/sandbox-providers/novita",
+    "name": "@valadrien-os/plugin-novita-sandbox",
     "publishFromCi": false
   },
   {

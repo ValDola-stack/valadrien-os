@@ -5,7 +5,7 @@ import { buildOpenCodeLocalConfig } from "@valadrien-os/adapter-opencode-local/u
 
 export const openCodeLocalUIAdapter: UIAdapterModule = {
   type: "opencode_local",
-  label: "OpenCode (local)",
+  label: "OpenCode",
   parseStdoutLine: parseOpenCodeStdoutLine,
   ConfigFields: OpenCodeLocalConfigFields,
   buildAdapterConfig: buildOpenCodeLocalConfig,

@@ -1,34 +1,25 @@
 import type {
-  AdapterModel,
   AdapterModelProfileDefinition,
   AdapterRuntimeCommandSpec,
   ServerAdapterModule,
 } from "./types.js";
+import { parseAdapterModelsEnv } from "../services/adapter-models-env.js";
+import { stampClaudeAgentIdHeader } from "./claude-agent-id-header.js";
 import {
   buildSandboxNpmInstallCommand,
   getAdapterSessionManagement,
 } from "@valadrien-os/adapter-utils";
 import type { AdapterSkillSnapshot } from "@valadrien-os/adapter-utils";
 import {
-  execute as acpxExecute,
-  testEnvironment as acpxTestEnvironment,
-  sessionCodec as acpxSessionCodec,
-  getConfigSchema as getAcpxConfigSchema,
-  listAcpxSkills,
-  syncAcpxSkills,
-} from "@valadrien-os/adapter-acpx-local/server";
-import {
-  agentConfigurationDoc as acpxAgentConfigurationDoc,
-  models as acpxModels,
-} from "@valadrien-os/adapter-acpx-local";
-import {
   execute as claudeExecute,
   listClaudeSkills,
   syncClaudeSkills,
   listClaudeModels,
+  refreshClaudeModels,
   testEnvironment as claudeTestEnvironment,
   sessionCodec as claudeSessionCodec,
   getQuotaWindows as claudeGetQuotaWindows,
+  getConfigSchema as getClaudeConfigSchema,
 } from "@valadrien-os/adapter-claude-local/server";
 import {
   agentConfigurationDoc as claudeAgentConfigurationDoc,
@@ -42,6 +33,7 @@ import {
   testEnvironment as codexTestEnvironment,
   sessionCodec as codexSessionCodec,
   getQuotaWindows as codexGetQuotaWindows,
+  getConfigSchema as getCodexConfigSchema,
 } from "@valadrien-os/adapter-codex-local/server";
 import {
   agentConfigurationDoc as codexAgentConfigurationDoc,
@@ -73,6 +65,7 @@ import {
   syncGeminiSkills,
   testEnvironment as geminiTestEnvironment,
   sessionCodec as geminiSessionCodec,
+  getConfigSchema as getGeminiConfigSchema,
 } from "@valadrien-os/adapter-gemini-local/server";
 import {
   agentConfigurationDoc as geminiAgentConfigurationDoc,
@@ -90,6 +83,10 @@ import {
   agentConfigurationDoc as grokAgentConfigurationDoc,
   models as grokModels,
 } from "@valadrien-os/adapter-grok-local";
+import {
+  createHermesGatewayServerAdapter,
+  createHermesLocalServerAdapter,
+} from "@valadrien-os/hermes-paperclip-adapter";
 import {
   execute as openCodeExecute,
   listOpenCodeSkills,
@@ -125,18 +122,6 @@ import {
   agentConfigurationDoc as piAgentConfigurationDoc,
   modelProfiles as piModelProfiles,
 } from "@valadrien-os/adapter-pi-local";
-import {
-  execute as hermesExecute,
-  testEnvironment as hermesTestEnvironment,
-  sessionCodec as hermesSessionCodec,
-  listSkills as hermesListSkills,
-  syncSkills as hermesSyncSkills,
-  detectModel as detectModelFromHermes,
-} from "hermes-paperclip-adapter/server";
-import {
-  agentConfigurationDoc as hermesAgentConfigurationDoc,
-  models as hermesModels,
-} from "hermes-paperclip-adapter";
 import { BUILTIN_ADAPTER_TYPES } from "./builtin-adapter-types.js";
 import { buildExternalAdapters } from "./plugin-loader.js";
 import { getDisabledAdapterTypes } from "../services/adapter-plugin-store.js";
@@ -182,93 +167,33 @@ function buildCursorRuntimeCommandSpec(config: Record<string, unknown>): Adapter
   };
 }
 
-function normalizeHermesConfig<T extends { config?: unknown; agent?: unknown }>(ctx: T): T {
-  const config =
-    ctx && typeof ctx === "object" && "config" in ctx && ctx.config && typeof ctx.config === "object"
-      ? (ctx.config as Record<string, unknown>)
-      : null;
-  const agent =
-    ctx && typeof ctx === "object" && "agent" in ctx && ctx.agent && typeof ctx.agent === "object"
-      ? (ctx.agent as Record<string, unknown>)
-      : null;
-  const agentAdapterConfig =
-    agent?.adapterConfig && typeof agent.adapterConfig === "object"
-      ? (agent.adapterConfig as Record<string, unknown>)
-      : null;
+const retiredAcpxMessage =
+  "The acpx_local adapter has been retired. Existing Claude and Codex ACPX agents should be migrated to claude_local or codex_local with adapterConfig.engine=\"acp\".";
 
-  const configCommand =
-    typeof config?.command === "string" && config.command.length > 0 ? config.command : undefined;
-  const agentCommand =
-    typeof agentAdapterConfig?.command === "string" && agentAdapterConfig.command.length > 0
-      ? agentAdapterConfig.command
-      : undefined;
+const retiredAcpxAgentConfigurationDoc = `# acpx_local retired
 
-  if (config && !config.hermesCommand && configCommand) {
-    config.hermesCommand = configCommand;
-  }
-  if (agentAdapterConfig && !agentAdapterConfig.hermesCommand && agentCommand) {
-    agentAdapterConfig.hermesCommand = agentCommand;
-  }
+Adapter: acpx_local
 
-  return ctx;
-}
+The standalone ACPX adapter has been retired. Use:
 
-// `hermes-paperclip-adapter` is the upstream-published external dependency and
-// still ships pre-rebrand type values — specifically the `paperclip_required`
-// `AdapterSkillOrigin`. Our local types and zod validators only accept
-// `valadrien_os_required`, so we translate at the boundary instead of polluting
-// the rebranded union with the legacy string. The cast to our local
-// `AdapterSkillSnapshot` is safe because we've just mapped every legacy origin
-// value to its rebranded equivalent.
-function rebrandHermesSkillSnapshot(snapshot: unknown): AdapterSkillSnapshot {
-  const typed = snapshot as {
-    entries?: ReadonlyArray<{ origin?: string }>;
-  } & Record<string, unknown>;
-  const entries = typed.entries ?? [];
-  const rebrandedEntries = entries.map((entry) =>
-    entry.origin === "paperclip_required"
-      ? { ...entry, origin: "valadrien_os_required" }
-      : entry,
-  );
-  return { ...typed, entries: rebrandedEntries } as unknown as AdapterSkillSnapshot;
-}
+- claude_local with adapterConfig.engine="acp" for Claude ACP execution.
+- codex_local with adapterConfig.engine="acp" for Codex ACP execution.
 
-function dedupeAdapterModels(models: AdapterModel[]): AdapterModel[] {
-  const seen = new Set<string>();
-  const result: AdapterModel[] = [];
-  for (const model of models) {
-    const id = model.id.trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    result.push({ ...model, id });
-  }
-  return result;
-}
-
-function prefixAdapterModelLabels(models: AdapterModel[], provider: "Claude" | "Codex"): AdapterModel[] {
-  const prefix = `${provider}: `;
-  return models.map((model) => ({
-    ...model,
-    label: model.label.startsWith(prefix) ? model.label : `${prefix}${model.label}`,
-  }));
-}
-
-async function listAcpxModels(): Promise<AdapterModel[]> {
-  const [claude, codex] = await Promise.all([
-    listClaudeModels().catch(() => claudeModels),
-    listCodexModels().catch(() => codexModels),
-  ]);
-  return dedupeAdapterModels([
-    ...acpxModels,
-    ...prefixAdapterModelLabels(claude, "Claude"),
-    ...prefixAdapterModelLabels(codex, "Codex"),
-  ]);
-}
+ValadrienOs keeps this tombstone registered so stale acpx_local rows fail clearly instead of falling back to the process adapter.
+`;
 
 const claudeLocalAdapter: ServerAdapterModule = {
   type: "claude_local",
-  execute: claudeExecute,
+  execute: stampClaudeAgentIdHeader(claudeExecute),
   testEnvironment: claudeTestEnvironment,
+  acp: {
+    agentId: "claude",
+    skillsMode: "ephemeral",
+    prerequisites: {
+      nodeRange: ">=22.12.0",
+      packages: ["@agentclientprotocol/claude-agent-acp"],
+    },
+  },
   listSkills: listClaudeSkills,
   syncSkills: syncClaudeSkills,
   sessionCodec: claudeSessionCodec,
@@ -276,6 +201,7 @@ const claudeLocalAdapter: ServerAdapterModule = {
   models: claudeModels,
   modelProfiles: claudeModelProfiles,
   listModels: listClaudeModels,
+  refreshModels: refreshClaudeModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: true,
   instructionsPathKey: "instructionsFilePath",
@@ -283,34 +209,64 @@ const claudeLocalAdapter: ServerAdapterModule = {
   getRuntimeCommandSpec: (config) =>
     buildNpmRuntimeCommandSpec(config, "claude", "@anthropic-ai/claude-code"),
   agentConfigurationDoc: claudeAgentConfigurationDoc,
+  getConfigSchema: getClaudeConfigSchema,
   getQuotaWindows: claudeGetQuotaWindows,
 };
 
 const acpxLocalAdapter: ServerAdapterModule = {
   type: "acpx_local",
-  execute: acpxExecute,
-  testEnvironment: acpxTestEnvironment,
-  listSkills: listAcpxSkills,
-  syncSkills: syncAcpxSkills,
-  sessionCodec: acpxSessionCodec,
-  sessionManagement: getAdapterSessionManagement("acpx_local") ?? undefined,
-  models: dedupeAdapterModels([
-    ...prefixAdapterModelLabels(claudeModels, "Claude"),
-    ...prefixAdapterModelLabels(codexModels, "Codex"),
-  ]),
-  listModels: listAcpxModels,
-  supportsLocalAgentJwt: true,
-  supportsInstructionsBundle: true,
-  instructionsPathKey: "instructionsFilePath",
+  async execute(ctx) {
+    await ctx.onLog("stderr", `${retiredAcpxMessage}\n`);
+    await ctx.onMeta?.({
+      adapterType: "acpx_local",
+      command: "acpx_local-retired",
+      commandNotes: [retiredAcpxMessage],
+    });
+    return {
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      errorMessage: retiredAcpxMessage,
+      errorCode: "acpx_local_retired",
+      provider: "acpx",
+      summary: retiredAcpxMessage,
+    };
+  },
+  async testEnvironment() {
+    return {
+      adapterType: "acpx_local",
+      status: "fail",
+      testedAt: new Date().toISOString(),
+      checks: [
+        {
+          code: "acpx_local_retired",
+          level: "error",
+          message: retiredAcpxMessage,
+          hint: "Set the agent adapter to claude_local or codex_local and set adapterConfig.engine to acp.",
+        },
+      ],
+    };
+  },
+  models: [],
+  supportsLocalAgentJwt: false,
+  supportsInstructionsBundle: false,
   requiresMaterializedRuntimeSkills: false,
-  agentConfigurationDoc: acpxAgentConfigurationDoc,
-  getConfigSchema: getAcpxConfigSchema,
+  agentConfigurationDoc: retiredAcpxAgentConfigurationDoc,
+  getConfigSchema: () => ({ fields: [] }),
 };
 
 const codexLocalAdapter: ServerAdapterModule = {
   type: "codex_local",
   execute: codexExecute,
   testEnvironment: codexTestEnvironment,
+  acp: {
+    agentId: "codex",
+    skillsMode: "ephemeral",
+    prerequisites: {
+      nodeRange: ">=22.13.0",
+      packages: ["@agentclientprotocol/codex-acp"],
+    },
+  },
   listSkills: listCodexSkills,
   syncSkills: syncCodexSkills,
   sessionCodec: codexSessionCodec,
@@ -325,6 +281,7 @@ const codexLocalAdapter: ServerAdapterModule = {
   requiresMaterializedRuntimeSkills: false,
   getRuntimeCommandSpec: (config) => buildNpmRuntimeCommandSpec(config, "codex", "@openai/codex"),
   agentConfigurationDoc: codexAgentConfigurationDoc,
+  getConfigSchema: getCodexConfigSchema,
   getQuotaWindows: codexGetQuotaWindows,
 };
 
@@ -366,6 +323,14 @@ const geminiLocalAdapter: ServerAdapterModule = {
   type: "gemini_local",
   execute: geminiExecute,
   testEnvironment: geminiTestEnvironment,
+  acp: {
+    agentId: "gemini",
+    skillsMode: "ephemeral",
+    prerequisites: {
+      nodeRange: ">=20.0.0",
+      packages: ["@google/gemini-cli"],
+    },
+  },
   listSkills: listGeminiSkills,
   syncSkills: syncGeminiSkills,
   sessionCodec: geminiSessionCodec,
@@ -379,6 +344,7 @@ const geminiLocalAdapter: ServerAdapterModule = {
   getRuntimeCommandSpec: (config) =>
     buildNpmRuntimeCommandSpec(config, "gemini", "@google/gemini-cli"),
   agentConfigurationDoc: geminiAgentConfigurationDoc,
+  getConfigSchema: getGeminiConfigSchema,
 };
 
 const grokLocalAdapter: ServerAdapterModule = {
@@ -401,6 +367,10 @@ const grokLocalAdapter: ServerAdapterModule = {
   }),
   agentConfigurationDoc: grokAgentConfigurationDoc,
 };
+
+const hermesGatewayAdapter = createHermesGatewayServerAdapter();
+
+const hermesLocalAdapter = createHermesLocalServerAdapter();
 
 const openclawGatewayAdapter: ServerAdapterModule = {
   type: "openclaw_gateway",
@@ -452,73 +422,6 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
-// hermes-paperclip-adapter v0.2.0 predates the authToken field; cast is
-// intentional until hermes ships a matching AdapterExecutionContext type.
-const executeHermesLocal = hermesExecute as unknown as ServerAdapterModule["execute"];
-
-const hermesLocalAdapter: ServerAdapterModule = {
-  type: "hermes_local",
-  execute: async (ctx) => {
-    const normalizedCtx = normalizeHermesConfig(ctx);
-    if (!normalizedCtx.authToken) return executeHermesLocal(normalizedCtx);
-
-    const existingConfig = (normalizedCtx.agent.adapterConfig ?? {}) as Record<string, unknown>;
-    const existingEnv =
-      typeof existingConfig.env === "object" && existingConfig.env !== null && !Array.isArray(existingConfig.env)
-        ? (existingConfig.env as Record<string, string>)
-        : {};
-    const explicitApiKey =
-      typeof existingEnv.VALADRIEN_OS_API_KEY === "string" && existingEnv.VALADRIEN_OS_API_KEY.trim().length > 0;
-    const promptTemplate =
-      typeof existingConfig.promptTemplate === "string" && existingConfig.promptTemplate.trim().length > 0
-        ? existingConfig.promptTemplate
-        : "";
-    const authGuardPrompt = [
-      "ValadrienOs API safety rule:",
-      "Use Authorization: Bearer $VALADRIEN_OS_API_KEY on every ValadrienOs API request.",
-      "Use X-ValadrienOs-Run-Id: $VALADRIEN_OS_RUN_ID on every ValadrienOs API request that writes or mutates data, including comments and issue updates.",
-      "Never use a board, browser, or local-board session for ValadrienOs API writes.",
-    ].join("\n");
-
-    const patchedConfig: Record<string, unknown> = {
-      ...existingConfig,
-      env: {
-        ...existingEnv,
-        ...(!explicitApiKey ? { VALADRIEN_OS_API_KEY: normalizedCtx.authToken } : {}),
-        VALADRIEN_OS_RUN_ID: normalizedCtx.runId,
-      },
-    };
-
-    // Only inject the auth guard into promptTemplate when a custom template already exists.
-    // When no custom template is set, Hermes uses its built-in default heartbeat/task prompt —
-    // overwriting it with only the auth guard text would strip the assigned issue/workflow instructions.
-    if (promptTemplate) {
-      patchedConfig.promptTemplate = `${authGuardPrompt}\n\n${promptTemplate}`;
-    }
-
-    const patchedCtx = {
-      ...normalizedCtx,
-      agent: {
-        ...normalizedCtx.agent,
-        adapterConfig: patchedConfig,
-      },
-    };
-
-    return executeHermesLocal(patchedCtx);
-  },
-  testEnvironment: (ctx) => hermesTestEnvironment(normalizeHermesConfig(ctx) as never),
-  sessionCodec: hermesSessionCodec,
-  listSkills: async (ctx) => rebrandHermesSkillSnapshot(await hermesListSkills(ctx)),
-  syncSkills: async (ctx, desiredSkills) =>
-    rebrandHermesSkillSnapshot(await hermesSyncSkills(ctx, desiredSkills)),
-  models: hermesModels,
-  supportsLocalAgentJwt: true,
-  supportsInstructionsBundle: false,
-  requiresMaterializedRuntimeSkills: false,
-  agentConfigurationDoc: hermesAgentConfigurationDoc,
-  detectModel: () => detectModelFromHermes(),
-};
-
 const adaptersByType = new Map<string, ServerAdapterModule>();
 
 // For builtin types that are overridden by an external adapter, we keep the
@@ -541,8 +444,9 @@ function registerBuiltInAdapters() {
     cursorLocalAdapter,
     geminiLocalAdapter,
     grokLocalAdapter,
-    openclawGatewayAdapter,
+    hermesGatewayAdapter,
     hermesLocalAdapter,
+    openclawGatewayAdapter,
     processAdapter,
     httpAdapter,
   ]) {
@@ -674,7 +578,42 @@ export function getServerAdapter(type: string): ServerAdapterModule {
   return findActiveServerAdapter(type) ?? processAdapter;
 }
 
+/**
+ * Memoized view of VALADRIEN_OS_ADAPTER_MODELS, keyed by the raw env string so
+ * tests (and live env mutation) that change the variable are still observed.
+ * Parsing happens at most once per distinct raw value instead of per
+ * `listAdapterModels` request, and malformed values fail SOFT here: we log the
+ * parse error once (per distinct raw value) and fall back to adapter-discovered
+ * models rather than throwing at request time.
+ */
+let adapterModelsEnvCache: {
+  raw: string | undefined;
+  value: ReturnType<typeof parseAdapterModelsEnv>;
+} | null = null;
+
+function getDeclaredAdapterModels(): ReturnType<typeof parseAdapterModelsEnv> {
+  const raw = process.env.VALADRIEN_OS_ADAPTER_MODELS;
+  if (adapterModelsEnvCache && adapterModelsEnvCache.raw === raw) {
+    return adapterModelsEnvCache.value;
+  }
+  let value: ReturnType<typeof parseAdapterModelsEnv> = null;
+  try {
+    value = parseAdapterModelsEnv(process.env);
+  } catch (err) {
+    console.error(
+      "[valadrien-os] Invalid VALADRIEN_OS_ADAPTER_MODELS; ignoring declared model lists:",
+      err,
+    );
+  }
+  adapterModelsEnvCache = { raw, value };
+  return value;
+}
+
 export async function listAdapterModels(type: string): Promise<{ id: string; label: string }[]> {
+  const declaredModels = getDeclaredAdapterModels();
+  if (declaredModels && declaredModels[type]?.length) {
+    return declaredModels[type].map((m) => ({ id: m.id, label: m.label ?? m.id }));
+  }
   const adapter = findActiveServerAdapter(type);
   if (!adapter) return [];
   if (adapter.listModels) {

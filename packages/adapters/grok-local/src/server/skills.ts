@@ -2,10 +2,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   AdapterSkillContext,
-  AdapterSkillEntry,
   AdapterSkillSnapshot,
 } from "@valadrien-os/adapter-utils";
 import {
+  buildRuntimeMountedSkillSnapshot,
   readValadrienOsRuntimeSkillEntries,
   resolveValadrienOsDesiredSkillNames,
 } from "@valadrien-os/adapter-utils/server-utils";
@@ -16,56 +16,13 @@ async function buildGrokSkillSnapshot(
   config: Record<string, unknown>,
 ): Promise<AdapterSkillSnapshot> {
   const availableEntries = await readValadrienOsRuntimeSkillEntries(config, __moduleDir);
-  const availableByKey = new Map(availableEntries.map((entry) => [entry.key, entry]));
   const desiredSkills = resolveValadrienOsDesiredSkillNames(config, availableEntries);
-  const desiredSet = new Set(desiredSkills);
-  const entries: AdapterSkillEntry[] = availableEntries.map((entry) => ({
-    key: entry.key,
-    runtimeName: entry.runtimeName,
-    desired: desiredSet.has(entry.key),
-    managed: true,
-    state: desiredSet.has(entry.key) ? "configured" : "available",
-    origin: entry.required ? "valadrien_os_required" : "company_managed",
-    originLabel: entry.required ? "Required by ValadrienOs" : "Managed by ValadrienOs",
-    readOnly: false,
-    sourcePath: entry.source,
-    targetPath: null,
-    detail: desiredSet.has(entry.key)
-      ? "Will be copied into `.claude/skills` in the execution workspace on the next run."
-      : null,
-    required: Boolean(entry.required),
-    requiredReason: entry.requiredReason ?? null,
-  }));
-  const warnings: string[] = [];
-
-  for (const desiredSkill of desiredSkills) {
-    if (availableByKey.has(desiredSkill)) continue;
-    warnings.push(`Desired skill "${desiredSkill}" is not available from the ValadrienOs skills directory.`);
-    entries.push({
-      key: desiredSkill,
-      runtimeName: null,
-      desired: true,
-      managed: true,
-      state: "missing",
-      origin: "external_unknown",
-      originLabel: "External or unavailable",
-      readOnly: false,
-      sourcePath: null,
-      targetPath: null,
-      detail: "ValadrienOs cannot find this skill in the local runtime skills directory.",
-    });
-  }
-
-  entries.sort((left, right) => left.key.localeCompare(right.key));
-
-  return {
+  return buildRuntimeMountedSkillSnapshot({
     adapterType: "grok_local",
-    supported: true,
-    mode: "ephemeral",
+    availableEntries,
     desiredSkills,
-    entries,
-    warnings,
-  };
+    configuredDetail: "Will be copied into `.claude/skills` in the execution workspace on the next run.",
+  });
 }
 
 export async function listGrokSkills(ctx: AdapterSkillContext): Promise<AdapterSkillSnapshot> {
