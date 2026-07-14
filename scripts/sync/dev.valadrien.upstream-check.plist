@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  dev.valadrien.upstream-check — daily upstream drift monitor for valadrien-os.
+  Install:
+    1. Edit REPO_DIR and NTFY_TOPIC below.
+    2. cp scripts/sync/dev.valadrien.upstream-check.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/dev.valadrien.upstream-check.plist
+  Logs: /tmp/valadrien-upstream-check.{out,err}
+-->
+<dict>
+  <key>Label</key>
+  <string>dev.valadrien.upstream-check</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>"$REPO_DIR/scripts/sync/check-upstream.sh"</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>REPO_DIR</key>
+    <string>/Users/fernandadrien/Documents/Claude/Projects/ValAdrien.DEV/valadrien-os</string>
+    <key>NTFY_TOPIC</key>
+    <string>CHANGE-ME-valadrien-ops</string>
+    <key>BEHIND_WARN</key>
+    <string>25</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/valadrien-upstream-check.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/valadrien-upstream-check.err</string>
+</dict>
+</plist>

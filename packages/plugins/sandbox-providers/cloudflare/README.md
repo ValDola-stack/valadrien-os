@@ -12,7 +12,7 @@ From a ValAdrien OS instance, install:
 @valadrien-os/plugin-cloudflare-sandbox
 ```
 
-Configure Cloudflare from `Company Settings -> Environments`, not from the plugin's instance settings page.
+Configure Cloudflare from `Instance Settings -> Environments`, not from the plugin's plugin page.
 
 ## Configuration
 

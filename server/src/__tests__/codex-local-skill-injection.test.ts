@@ -31,8 +31,8 @@ async function createCustomSkill(root: string, skillName: string) {
 }
 
 describe("codex local adapter skill injection", () => {
-  const valadrienOsKey = "ValDola-stack/valadrien-os/valadrien-os";
-  const createAgentKey = "ValDola-stack/valadrien-os/valadrien-os-create-agent";
+  const valadrienOsKey = "paperclipai/paperclip/valadrien-os";
+  const createAgentKey = "paperclipai/paperclip/valadrien-os-create-agent";
   const cleanupDirs = new Set<string>();
 
   afterEach(async () => {

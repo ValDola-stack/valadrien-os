@@ -4,9 +4,12 @@ import { IssueChatThread } from "@/components/IssueChatThread";
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  acceptedManyRequestCheckboxConfirmationInteraction,
+  acceptedRequestCheckboxConfirmationInteraction,
   acceptedSuggestedTasksInteraction,
   answeredAskUserQuestionsInteraction,
   acceptedRequestConfirmationInteraction,
+  boundedRequestCheckboxConfirmationInteraction,
   commentExpiredRequestConfirmationInteraction,
   failedRequestConfirmationInteraction,
   genericPendingRequestConfirmationInteraction,
@@ -15,21 +18,35 @@ import {
   issueThreadInteractionFixtureMeta,
   issueThreadInteractionLiveRuns,
   issueThreadInteractionTranscriptsByRunId,
+  completeRequestItemVerdictsInteraction,
+  manyItemsRequestItemVerdictsInteraction,
+  manyOptionsRequestCheckboxConfirmationInteraction,
   mixedIssueThreadInteractions,
   optionalDeclineRequestConfirmationInteraction,
+  partialRequestItemVerdictsInteraction,
+  pendingRequestItemVerdictsInteraction,
+  supersededRequestItemVerdictsInteraction,
   pendingAskUserQuestionsInteraction,
+  pendingRequestCheckboxConfirmationInteraction,
   pendingRequestConfirmationInteraction,
   pendingSuggestedTasksInteraction,
   planApprovalAcceptedRequestConfirmationInteraction,
+  planApprovalResumeFailedRequestConfirmationInteraction,
   rejectedNoReasonRequestConfirmationInteraction,
+  rejectedRequestCheckboxConfirmationInteraction,
   rejectedRequestConfirmationInteraction,
   rejectedSuggestedTasksInteraction,
+  staleTargetRequestCheckboxConfirmationInteraction,
   staleTargetRequestConfirmationInteraction,
 } from "@/fixtures/issueThreadInteractionFixtures";
 import type {
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
+  RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
+  RequestItemVerdictsInteraction,
+  RequestItemVerdictsResultItem,
+  RequestItemVerdictValue,
   SuggestTasksInteraction,
 } from "@/lib/issue-thread-interactions";
 import { storybookAgentMap } from "../fixtures/valadrienOsData";
@@ -191,6 +208,94 @@ function InteractiveRequestConfirmationCard() {
   );
 }
 
+function InteractiveRequestCheckboxConfirmationCard({
+  pending,
+  accepted,
+  rejected,
+}: {
+  pending: RequestCheckboxConfirmationInteraction;
+  accepted: RequestCheckboxConfirmationInteraction;
+  rejected: RequestCheckboxConfirmationInteraction;
+}) {
+  const [interaction, setInteraction] = useState<RequestCheckboxConfirmationInteraction>(pending);
+
+  return (
+    <IssueThreadInteractionCard
+      interaction={interaction}
+      agentMap={storybookAgentMap}
+      currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+      userLabelMap={boardUserLabels}
+      onAcceptInteraction={(_interaction, _selectedClientKeys, selectedOptionIds) =>
+        setInteraction({
+          ...accepted,
+          payload: pending.payload,
+          result: {
+            version: 1,
+            outcome: "accepted",
+            selectedOptionIds: selectedOptionIds ?? [],
+          },
+        })}
+      onRejectInteraction={(_interaction, reason) =>
+        setInteraction({
+          ...rejected,
+          payload: pending.payload,
+          result: {
+            version: 1,
+            outcome: "rejected",
+            reason: reason || rejected.result?.reason || null,
+          },
+        })}
+    />
+  );
+}
+
+function InteractiveRequestItemVerdictsCard({
+  initial = pendingRequestItemVerdictsInteraction,
+}: {
+  initial?: RequestItemVerdictsInteraction;
+}) {
+  const [interaction, setInteraction] = useState<RequestItemVerdictsInteraction>(initial);
+
+  return (
+    <IssueThreadInteractionCard
+      interaction={interaction}
+      agentMap={storybookAgentMap}
+      currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+      userLabelMap={boardUserLabels}
+      onSubmitInteractionVerdicts={(_interaction, verdicts) =>
+        setInteraction((current) => {
+          const existing = current.result?.items ?? [];
+          const existingIds = new Set(existing.map((item) => item.id));
+          const merged: RequestItemVerdictsResultItem[] = [
+            ...existing,
+            ...verdicts
+              .filter((verdict) => !existingIds.has(verdict.id))
+              .map((verdict) => ({
+                id: verdict.id,
+                verdict: verdict.verdict as RequestItemVerdictValue,
+                reason: verdict.reason ?? null,
+                resolvedByUserId: issueThreadInteractionFixtureMeta.currentUserId,
+                resolvedAt: new Date("2026-04-20T15:20:00.000Z"),
+              })),
+          ];
+          const complete = merged.length === current.payload.items.length;
+          return {
+            ...current,
+            status: complete ? "answered" : "pending",
+            resolvedAt: complete ? new Date("2026-04-20T15:20:00.000Z") : null,
+            resolvedByUserId: complete ? issueThreadInteractionFixtureMeta.currentUserId : null,
+            result: {
+              version: 1,
+              outcome: "resolved",
+              complete,
+              items: merged,
+            },
+          };
+        })}
+    />
+  );
+}
+
 function AutoOpenDeclineRequestConfirmationCard({
   interaction,
 }: {
@@ -224,7 +329,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Interaction cards for `suggest_tasks`, `ask_user_questions`, and `request_confirmation`, shown both in isolation and inside the real `IssueChatThread` feed.",
+          "Interaction cards for `suggest_tasks`, `ask_user_questions`, `request_confirmation`, and `request_checkbox_confirmation`, shown both in isolation and inside the real `IssueChatThread` feed.",
       },
     },
   },
@@ -503,6 +608,24 @@ export const RequestConfirmationPlanApprovalConfirmed: Story = {
   ),
 };
 
+export const RequestConfirmationPlanApprovalResumeFailed: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Plan approval resume failed"
+        description="The approval remains accepted, but the failed continuation is visibly amber and needs attention."
+      >
+        <IssueThreadInteractionCard
+          interaction={planApprovalResumeFailedRequestConfirmationInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
 export const RequestConfirmationFailed: Story = {
   render: () => (
     <StoryFrame>
@@ -523,6 +646,204 @@ export const RequestConfirmationFailed: Story = {
 
 export const RequestConfirmationAccepted = RequestConfirmationConfirmed;
 export const RequestConfirmationRejected = RequestConfirmationDeclinedWithReason;
+
+export const CheckboxConfirmationPending: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Pending checkbox confirmation"
+        description="Board users select any number of options, with frontend-owned select-all and clear controls."
+      >
+        <InteractiveRequestCheckboxConfirmationCard
+          pending={pendingRequestCheckboxConfirmationInteraction}
+          accepted={acceptedRequestCheckboxConfirmationInteraction}
+          rejected={rejectedRequestCheckboxConfirmationInteraction}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const CheckboxConfirmationBounded: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Min/max constrained selection"
+        description="The card enforces minimum and maximum selection counts and requires a decline reason."
+      >
+        <InteractiveRequestCheckboxConfirmationCard
+          pending={boundedRequestCheckboxConfirmationInteraction}
+          accepted={acceptedRequestCheckboxConfirmationInteraction}
+          rejected={rejectedRequestCheckboxConfirmationInteraction}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const CheckboxConfirmationAccepted: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Accepted checkbox confirmation"
+        description="The resolved state leads with a count and lists the selected labels."
+      >
+        <IssueThreadInteractionCard
+          interaction={acceptedRequestCheckboxConfirmationInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const CheckboxConfirmationAcceptedMany: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Accepted large selection"
+        description="Large resolved selections summarize by count first and bound the inline chips."
+      >
+        <IssueThreadInteractionCard
+          interaction={acceptedManyRequestCheckboxConfirmationInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const CheckboxConfirmationRejected: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Declined checkbox confirmation"
+        description="The decline reason stays attached to the request in the thread."
+      >
+        <IssueThreadInteractionCard
+          interaction={rejectedRequestCheckboxConfirmationInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const CheckboxConfirmationStaleTarget: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Expired by target change"
+        description="The watched plan revision moved before the selection was confirmed."
+      >
+        <IssueThreadInteractionCard
+          interaction={staleTargetRequestCheckboxConfirmationInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const CheckboxConfirmationManyOptions: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="Around 100 options"
+        description="The list stays compact inside a bounded scroll region even with 100 options."
+      >
+        <InteractiveRequestCheckboxConfirmationCard
+          pending={manyOptionsRequestCheckboxConfirmationInteraction}
+          accepted={acceptedManyRequestCheckboxConfirmationInteraction}
+          rejected={rejectedRequestCheckboxConfirmationInteraction}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const ItemVerdictsPending: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="S1 / S2 — draft then apply"
+        description="Mark each item Approve or Reject (reject reveals a required reason), then Apply N decisions in one pass. Approve all is the common-case accelerator."
+      >
+        <InteractiveRequestItemVerdictsCard />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const ItemVerdictsPartial: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="S3 / S4 — partial progress"
+        description="Two items already applied (one approved, one rejected with its reason echoed); three remain actionable. The card stays alive and shows 2 of 5 decided."
+      >
+        <InteractiveRequestItemVerdictsCard initial={partialRequestItemVerdictsInteraction} />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const ItemVerdictsComplete: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="S5 — complete"
+        description="Every item has a terminal verdict. The summary chip reads 5 decided · 3 approved · 2 rejected and the row leaves the queue."
+      >
+        <IssueThreadInteractionCard
+          interaction={completeRequestItemVerdictsInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const ItemVerdictsSuperseded: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="S6 — stale / superseded"
+        description="A later comment expired the review. Items already applied cannot be reverted; the remaining items were cancelled."
+      >
+        <IssueThreadInteractionCard
+          interaction={supersededRequestItemVerdictsInteraction}
+          agentMap={storybookAgentMap}
+          currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          userLabelMap={boardUserLabels}
+        />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
+
+export const ItemVerdictsManyItems: Story = {
+  render: () => (
+    <StoryFrame>
+      <ScenarioCard
+        title="S7 — long list"
+        description="24 items decided in passes; the expanded list scrolls in a bounded region and reuses the 200-item cap."
+      >
+        <InteractiveRequestItemVerdictsCard initial={manyItemsRequestItemVerdictsInteraction} />
+      </ScenarioCard>
+    </StoryFrame>
+  ),
+};
 
 export const ReviewSurface: Story = {
   render: () => (
@@ -574,7 +895,7 @@ export const ReviewSurface: Story = {
         <div className="grid gap-6 xl:grid-cols-2">
           <ScenarioCard
             title="Pending"
-            description="Answers stay local across the whole form and only wake the assignee once after final submit."
+            description="Answers stay local across the whole form until the operator submits the final response."
           >
             <InteractiveAskUserQuestionsCard />
           </ScenarioCard>

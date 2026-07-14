@@ -31,6 +31,14 @@ if (typeof window !== "undefined" && window.localStorage !== globalThis.localSto
   installStorageMock(window as unknown as Record<string, unknown>);
 }
 
+// jsdom does not implement Element.prototype.scrollIntoView. Several surfaces
+// (e.g. IssueChatThread's auto-scroll-to-latest) call it during normal render,
+// so provide a no-op default. Tests that assert on scroll behaviour override
+// this on the prototype themselves and restore it afterwards.
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
+
 // jsdom does not implement matchMedia. Components that read media queries
 // (e.g. prefers-reduced-motion gating in OrgChart) call it during render and
 // otherwise throw "window.matchMedia is not a function". Provide a global,

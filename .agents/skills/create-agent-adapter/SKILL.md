@@ -1,11 +1,9 @@
 ---
 name: create-agent-adapter
 description: >
-  Technical guide for creating a new ValAdrien OS agent adapter. Use when building
-  a new adapter package, adding support for a new AI coding tool (e.g. a new
-  CLI agent, API-based agent, or custom process), or when modifying the adapter
-  system. Covers the required interfaces, module structure, registration points,
-  and conventions derived from the existing claude-local and codex-local adapters.
+  Create or modify ValadrienOs agent adapters across server, UI, and CLI surfaces.
+  Use when adding support for a new CLI agent, API agent, custom process, or
+  adapter package.
 ---
 
 # Creating a ValAdrien OS Agent Adapter

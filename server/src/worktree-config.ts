@@ -115,17 +115,23 @@ function resolveWorktreeRuntimeContext(
   const configPath = resolveValadrienOsConfigPath(overrideConfigPath);
   const envPath = resolveValadrienOsEnvPath(configPath);
   const persistedEnv = readEnvEntries(envPath);
+  const persistedConfigPath = nonEmpty(persistedEnv.VALADRIEN_OS_CONFIG);
+  const persistedConfigLooksStale =
+    persistedConfigPath !== null &&
+    path.resolve(expandHomePrefix(persistedConfigPath)) !== path.resolve(configPath) &&
+    !fs.existsSync(resolveHomeAwarePath(persistedConfigPath));
+  const stablePersistedEnv = persistedConfigLooksStale ? {} : persistedEnv;
   const worktreeRoot = path.resolve(path.dirname(configPath), "..");
   const worktreeName =
-    nonEmpty(persistedEnv.VALADRIEN_OS_WORKTREE_NAME) ??
+    nonEmpty(stablePersistedEnv.VALADRIEN_OS_WORKTREE_NAME) ??
     nonEmpty(env.VALADRIEN_OS_WORKTREE_NAME) ??
     path.basename(worktreeRoot);
   const instanceId =
-    nonEmpty(persistedEnv.VALADRIEN_OS_INSTANCE_ID) ??
+    nonEmpty(stablePersistedEnv.VALADRIEN_OS_INSTANCE_ID) ??
     nonEmpty(env.VALADRIEN_OS_INSTANCE_ID) ??
     sanitizeWorktreeInstanceId(worktreeName);
   const homeDir = resolveHomeAwarePath(
-    nonEmpty(persistedEnv.VALADRIEN_OS_HOME) ??
+    nonEmpty(stablePersistedEnv.VALADRIEN_OS_HOME) ??
       nonEmpty(env.VALADRIEN_OS_HOME) ??
       nonEmpty(env.VALADRIEN_OS_WORKTREES_DIR) ??
       "~/.valadrien-os-worktrees",

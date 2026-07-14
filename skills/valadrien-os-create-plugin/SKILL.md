@@ -1,11 +1,9 @@
 ---
 name: valadrien-os-create-plugin
 description: >
-  Create and develop external ValAdrien OS plugins with the CLI-first workflow.
-  Use when scaffolding a new plugin, working on a local plugin against a running
-  ValAdrien OS instance, or updating plugin authoring docs. Covers `valadrien-os
-  plugin init`, the local install loop via `valadrien-os plugin install <path>`,
-  worker/UI rebuild and reload semantics, and the required success checklist.
+  Create and develop external ValadrienOs plugins with the CLI-first workflow. Use
+  when scaffolding a plugin, iterating on a local plugin, installing it into
+  ValadrienOs, or updating plugin authoring docs.
 ---
 
 # Create and develop a ValAdrien OS plugin

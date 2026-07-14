@@ -14,11 +14,23 @@ export {
   trackAgentFirstHeartbeat,
   trackAgentTaskCompleted,
   trackErrorHandlerCrash,
+  trackInteractionResolved,
 } from "./events.js";
 export type {
   TelemetryConfig,
   TelemetryState,
   TelemetryEvent,
   TelemetryEventEnvelope,
+  TelemetryDimensions,
+  TelemetryDimensionValue,
+  TelemetryEventDimensions,
   TelemetryEventName,
+  RegisteredPluginEventName,
 } from "./types.js";
+export type {
+  AnyValadrienOsTelemetryEvent,
+  EventDimensionsMap,
+  ValadrienOsEventName,
+} from "./generated/valadrien-os-telemetry.js";
+export { EVENT_RETENTION_CLASS, RETENTION_DAYS } from "./retention.js";
+export type { RetentionClass } from "./retention.js";

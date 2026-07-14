@@ -1,12 +1,16 @@
-import { isFoundingAgentRole } from "@valadrien-os/shared";
-
 export type NormalizedAgentPermissions = Record<string, unknown> & {
   canCreateAgents: boolean;
+  canCreateSkills: boolean;
 };
 
 export function defaultPermissionsForRole(role: string): NormalizedAgentPermissions {
   return {
-    canCreateAgents: isFoundingAgentRole(role),
+    // F1 (sync 2026-07-13): restore fork least-privilege — only CEO creates agents by
+    // default (upstream broadened this to isFoundingAgentRole = CEO+CoS+CTO). Agent
+    // creation spawns autonomous, money-spending agents; keep it CEO-only, grant others
+    // explicitly. See scripts/sync/HANDOFF-20260713-test-triage.md §F1.
+    canCreateAgents: role.trim().toLowerCase() === "ceo",
+    canCreateSkills: true,
   };
 }
 
@@ -27,5 +31,9 @@ export function normalizeAgentPermissions(
       typeof record.canCreateAgents === "boolean"
         ? record.canCreateAgents
         : defaults.canCreateAgents,
+    canCreateSkills:
+      typeof record.canCreateSkills === "boolean"
+        ? record.canCreateSkills
+        : defaults.canCreateSkills,
   };
 }

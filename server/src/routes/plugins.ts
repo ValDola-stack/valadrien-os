@@ -11,14 +11,15 @@
  * - Retrieving UI slot contributions for frontend rendering
  * - Discovering and executing plugin-contributed agent tools
  *
- * All routes require board-level authentication, and sensitive instance-wide
+ * Most routes require board-level authentication, and sensitive instance-wide
  * mutations such as install/upgrade require instance-admin privileges.
+ * Plugin tool discovery and execution routes allow both board and agent access.
  *
  * @module server/routes/plugins
  * @see doc/plugins/PLUGIN_SPEC.md for the full plugin specification
  */
 
-import { existsSync } from "node:fs";
+import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -46,7 +47,12 @@ import {
 } from "@valadrien-os/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import { pluginLifecycleManager } from "../services/plugin-lifecycle.js";
-import { getPluginUiContributionMetadata, pluginLoader } from "../services/plugin-loader.js";
+import {
+  getPluginUiContributionMetadata,
+  listMissingDeclaredPluginEntrypoints,
+  pluginLoader,
+  REPO_ROOT,
+} from "../services/plugin-loader.js";
 import { logActivity } from "../services/activity-log.js";
 import { publishGlobalLiveEvent } from "../services/live-events.js";
 import { issueService } from "../services/issues.js";
@@ -60,6 +66,7 @@ import { JsonRpcCallError, PLUGIN_RPC_ERROR_CODES } from "@valadrien-os/plugin-s
 import {
   assertAuthenticated,
   assertBoard,
+  assertBoardOrAgent,
   assertBoardOrgAccess,
   assertCompanyAccess,
   assertInstanceAdmin,
@@ -114,13 +121,15 @@ interface PluginInstallRequest {
   isLocalPath?: boolean;
 }
 
-interface AvailablePluginExample {
+interface AvailableBundledPlugin {
   packageName: string;
   pluginKey: string;
   displayName: string;
   description: string;
   localPath: string;
   tag: "example" | "first-party";
+  experimental: boolean;
+  hasBuiltEntrypoints: boolean;
 }
 
 /** Response body for GET /api/plugins/:pluginId/health */
@@ -149,57 +158,186 @@ const PLUGIN_SCOPED_API_RESPONSE_HEADER_ALLOWLIST = new Set([
 ]);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../..");
+const EXPERIMENTAL_BUNDLED_PLUGIN_PACKAGE_NAMES = new Set([
+  "@valadrien-os/plugin-llm-wiki",
+  "@valadrien-os/plugin-modal",
+  "@valadrien-os/plugin-workspace-diff",
+]);
+/**
+ * Cached bundled-plugin discovery. Static metadata (name, key, display, paths)
+ * is expensive to compute and never changes at runtime, so it is cached. The
+ * `hasBuiltEntrypoints` flag is filesystem state that flips when a plugin is
+ * auto-built on install, so it is recomputed per request in `listBundledPlugins`
+ * rather than cached.
+ */
+type DiscoveredBundledPlugin = {
+  entry: Omit<AvailableBundledPlugin, "hasBuiltEntrypoints">;
+  packageRoot: string;
+  pkgJson: Record<string, unknown>;
+};
+let bundledPluginsCache: Promise<DiscoveredBundledPlugin[]> | null = null;
 
-const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
-  {
-    packageName: "@valadrien-os/plugin-workspace-diff",
-    pluginKey: "valadrien-os.workspace-diff",
-    displayName: "Workspace Changes",
-    description: "First-party workspace Changes tab backed by plugin-local Git diff computation.",
-    localPath: "packages/plugins/plugin-workspace-diff",
-    tag: "first-party",
-  },
-  {
-    packageName: "@valadrien-os/plugin-hello-world-example",
-    pluginKey: "valadrien-os.hello-world-example",
-    displayName: "Hello World Widget (Example)",
-    description: "Reference UI plugin that adds a simple Hello World widget to the ValadrienOs dashboard.",
-    localPath: "packages/plugins/examples/plugin-hello-world-example",
-    tag: "example",
-  },
-  {
-    packageName: "@valadrien-os/plugin-file-browser-example",
-    pluginKey: "valadrien-os-file-browser-example",
-    displayName: "File Browser (Example)",
-    description: "Example plugin that adds a Files link in project navigation plus a project detail file browser.",
-    localPath: "packages/plugins/examples/plugin-file-browser-example",
-    tag: "example",
-  },
-  {
-    packageName: "@valadrien-os/plugin-kitchen-sink-example",
-    pluginKey: "valadrien-os-kitchen-sink-example",
-    displayName: "Kitchen Sink (Example)",
-    description: "Reference plugin that demonstrates the current ValadrienOs plugin API surface, bridge flows, UI extension surfaces, jobs, webhooks, tools, streams, and trusted local workspace/process demos.",
-    localPath: "packages/plugins/examples/plugin-kitchen-sink-example",
-    tag: "example",
-  },
-  {
-    packageName: "@valadrien-os/plugin-orchestration-smoke-example",
-    pluginKey: "valadrien-os.plugin-orchestration-smoke-example",
-    displayName: "Orchestration Smoke (Example)",
-    description: "Acceptance fixture for scoped plugin routes, restricted database namespaces, issue orchestration, documents, wakeups, summaries, and UI status surfaces.",
-    localPath: "packages/plugins/examples/plugin-orchestration-smoke-example",
-    tag: "example",
-  },
-];
+function titleCasePluginName(packageName: string): string {
+  const localName = packageName.split("/").pop() ?? packageName;
+  return localName
+    .replace(/^valadrien-os-plugin-/, "")
+    .replace(/^plugin-/, "")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
-function listBundledPluginExamples(): AvailablePluginExample[] {
-  return BUNDLED_PLUGIN_EXAMPLES.flatMap((plugin) => {
-    const absoluteLocalPath = path.resolve(REPO_ROOT, plugin.localPath);
-    if (!existsSync(absoluteLocalPath)) return [];
-    return [{ ...plugin, localPath: absoluteLocalPath }];
+async function fileExists(filePath: string): Promise<boolean> {
+  return access(filePath).then(() => true, () => false);
+}
+
+async function readJsonFile(filePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function findPackageJsonFiles(root: string, maxDepth = 4): Promise<string[]> {
+  if (!(await fileExists(root))) return [];
+
+  const packageJsonFiles: string[] = [];
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (depth > maxDepth) return;
+
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.name === "node_modules" || entry.name === "dist") continue;
+      const entryPath = path.join(dir, entry.name);
+
+      if (entry.isFile() && entry.name === "package.json") {
+        packageJsonFiles.push(entryPath);
+      } else if (entry.isDirectory()) {
+        await walk(entryPath, depth + 1);
+      }
+    }
+  };
+
+  await walk(root, 0);
+  return packageJsonFiles;
+}
+
+function manifestSourcePath(packageRoot: string, pkgJson: Record<string, unknown>): string | null {
+  const valadrienOsPlugin = pkgJson.valadrienOsPlugin;
+  if (
+    !valadrienOsPlugin
+    || typeof valadrienOsPlugin !== "object"
+    || Array.isArray(valadrienOsPlugin)
+  ) {
+    return null;
+  }
+
+  const manifestPath = (valadrienOsPlugin as Record<string, unknown>).manifest;
+  if (typeof manifestPath !== "string") return null;
+
+  const sourcePath = manifestPath
+    .replace(/^\.\/dist\//, "./src/")
+    .replace(/\.js$/, ".ts");
+  return path.resolve(packageRoot, sourcePath);
+}
+
+function firstStringLiteral(source: string, key: string): string | null {
+  const match = source.match(
+    new RegExp(`${key}:\\s*(?:"([^"]*)"|'([^']*)'|\`([^\`]*)\`)`, "s"),
+  );
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+}
+
+async function bundledPluginMetadata(
+  packageRoot: string,
+  pkgJson: Record<string, unknown>,
+): Promise<{ pluginKey?: string; displayName?: string; description?: string }> {
+  const sourcePath = manifestSourcePath(packageRoot, pkgJson);
+  if (!sourcePath || !(await fileExists(sourcePath))) return {};
+
+  try {
+    const source = await readFile(sourcePath, "utf8");
+    const pluginId = source
+      .match(/(?:export\s+)?const\s+PLUGIN_ID\s*=\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/)
+      ?.slice(1)
+      .find(Boolean)
+      ?? firstStringLiteral(source, "id")
+      ?? null;
+    return {
+      pluginKey: pluginId ?? undefined,
+      displayName: firstStringLiteral(source, "displayName") ?? undefined,
+      description: firstStringLiteral(source, "description") ?? undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function isExperimentalBundledPlugin(packageRoot: string, packageName: string): boolean {
+  return (
+    EXPERIMENTAL_BUNDLED_PLUGIN_PACKAGE_NAMES.has(packageName)
+    || packageRoot.includes(`${path.sep}sandbox-providers${path.sep}`)
+    || packageName.includes("sandbox")
+  );
+}
+
+async function discoverBundledPlugins(): Promise<DiscoveredBundledPlugin[]> {
+  const pluginRoot = path.resolve(REPO_ROOT, "packages/plugins");
+  const bundledPlugins: DiscoveredBundledPlugin[] = [];
+  for (const packageJsonPath of await findPackageJsonFiles(pluginRoot)) {
+    const packageRoot = path.dirname(packageJsonPath);
+    const pkgJson = await readJsonFile(packageJsonPath);
+    const valadrienOsPlugin = pkgJson?.valadrienOsPlugin;
+    if (
+      !pkgJson
+      || !valadrienOsPlugin
+      || typeof valadrienOsPlugin !== "object"
+      || Array.isArray(valadrienOsPlugin)
+    ) {
+      continue;
+    }
+
+    const packageName = pkgJson.name;
+    if (typeof packageName !== "string" || packageName.length === 0) continue;
+
+    const metadata = await bundledPluginMetadata(packageRoot, pkgJson);
+    const tag = packageRoot.includes(`${path.sep}examples${path.sep}`) ? "example" : "first-party";
+    bundledPlugins.push({
+      entry: {
+        packageName,
+        pluginKey: metadata.pluginKey ?? packageName,
+        displayName: metadata.displayName ?? titleCasePluginName(packageName),
+        description: metadata.description
+          ?? `Bundled ValadrienOs plugin from ${path.relative(REPO_ROOT, packageRoot)}.`,
+        localPath: packageRoot,
+        tag,
+        experimental: isExperimentalBundledPlugin(packageRoot, packageName),
+      },
+      packageRoot,
+      pkgJson,
+    });
+  }
+
+  return bundledPlugins.sort((left, right) => {
+    if (left.entry.tag !== right.entry.tag) return left.entry.tag === "first-party" ? -1 : 1;
+    return left.entry.displayName.localeCompare(right.entry.displayName);
   });
+}
+
+async function listBundledPlugins(): Promise<AvailableBundledPlugin[]> {
+  bundledPluginsCache ??= discoverBundledPlugins().catch((error: unknown) => {
+    bundledPluginsCache = null;
+    throw error;
+  });
+  const discovered = await bundledPluginsCache;
+  // Recompute the filesystem-dependent flag per request so a plugin auto-built
+  // during install is no longer reported as missing its entrypoints.
+  return discovered.map(({ entry, packageRoot, pkgJson }) => ({
+    ...entry,
+    hasBuiltEntrypoints: listMissingDeclaredPluginEntrypoints(packageRoot, pkgJson).length === 0,
+  }));
 }
 
 /**
@@ -681,12 +819,12 @@ export function pluginRoutes(
   /**
    * GET /api/plugins/examples
    *
-   * Return first-party example plugins bundled in this repo, if present.
+   * Return plugin packages bundled in this repo, if present.
    * These can be installed through the normal local-path install flow.
    */
   router.get("/plugins/examples", async (req, res) => {
     assertBoardOrgAccess(req);
-    res.json(listBundledPluginExamples());
+    res.json(await listBundledPlugins());
   });
 
   // IMPORTANT: Static routes must come before parameterized routes
@@ -773,7 +911,7 @@ export function pluginRoutes(
    * Errors: 501 if tool dispatcher is not configured
    */
   router.get("/plugins/tools", async (req, res) => {
-    assertBoardOrgAccess(req);
+    assertBoardOrAgent(req);
 
     if (!toolDeps) {
       res.status(501).json({ error: "Plugin tool dispatch is not enabled" });
@@ -807,7 +945,7 @@ export function pluginRoutes(
    * - 502 if the plugin worker is unavailable or the RPC call fails
    */
   router.post("/plugins/tools/execute", async (req, res) => {
-    assertBoardOrgAccess(req);
+    assertBoardOrAgent(req);
 
     if (!toolDeps) {
       res.status(501).json({ error: "Plugin tool dispatch is not enabled" });

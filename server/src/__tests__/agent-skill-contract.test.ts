@@ -31,7 +31,7 @@ describe("agent skill contract", () => {
       mode: "ephemeral",
       desiredSkills: [],
       entries: [{
-        key: "ValDola-stack/valadrien-os/valadrien-os",
+        key: "paperclipai/paperclip/valadrien-os",
         runtimeName: "valadrien-os",
         desired: true,
         managed: true,
@@ -41,7 +41,7 @@ describe("agent skill contract", () => {
     })).toMatchObject({
       adapterType: "claude_local",
       entries: [{
-        key: "ValDola-stack/valadrien-os/valadrien-os",
+        key: "paperclipai/paperclip/valadrien-os",
         state: "configured",
       }],
     });

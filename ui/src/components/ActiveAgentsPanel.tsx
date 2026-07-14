@@ -18,6 +18,8 @@ import { HeartbeatSpine } from "./HeartbeatSpine";
 import { runLiveState, liveCadence } from "../lib/status-colors";
 import { RunChatSurface } from "./RunChatSurface";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
+import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { Badge } from "@/components/ui/badge";
 
 function RunCardRecoveryChip({ action }: { action: IssueRecoveryAction }) {
   const state = deriveActiveRecoveryDisplayState(action);
@@ -25,20 +27,20 @@ function RunCardRecoveryChip({ action }: { action: IssueRecoveryAction }) {
   const tone = RECOVERY_CHIP_DEFAULT_TONE[state];
   const Icon = tone.icon;
   return (
-    <span
+    <Badge variant="outline"
       data-testid="active-agent-run-recovery-indicator"
       data-recovery-state={state}
       role="status"
       aria-label={tone.label}
-      title={`${tone.label} — open the source issue to act.`}
+      title={`${tone.label} — open the source task to act.`}
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
+        "gap-0.5 px-1.5 text-(length:--text-nano)",
         tone.className,
       )}
     >
       <Icon className="h-2.5 w-2.5" aria-hidden />
       {tone.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -78,10 +80,20 @@ export function ActiveAgentsPanel({
   queryScope = "dashboard",
   showMoreLink = true,
 }: ActiveAgentsPanelProps) {
-  const { data: liveRuns } = useQuery({
-    queryKey: [...queryKeys.liveRuns(companyId), queryScope, { minRunCount, fetchLimit }],
-    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId, { minCount: minRunCount, limit: fetchLimit }),
+  const liveRunsQueryKey = [...queryKeys.liveRuns(companyId), queryScope, { minRunCount, fetchLimit }] as const;
+  const sharedLiveRuns = useSharedPollingQuery({
+    companyId,
+    resourceKey: `live-runs:${queryScope}:${minRunCount}:${fetchLimit ?? "default"}`,
+    queryKey: liveRunsQueryKey,
+    enabled: !!companyId,
+    leaderOnly: true,
   });
+  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
+    queryKey: liveRunsQueryKey,
+    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId, { minCount: minRunCount, limit: fetchLimit }),
+    enabled: sharedLiveRuns.enabled,
+  });
+  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
 
   const runs = liveRuns ?? [];
   const visibleRuns = useMemo(() => runs.slice(0, cardLimit), [cardLimit, runs]);
@@ -178,7 +190,7 @@ const AgentRunCard = memo(function AgentRunCard({
   const cad = liveCadence(run.id);
   return (
     <div className={cn(
-      "relative flex h-[320px] flex-col overflow-hidden rounded-xl border",
+      "relative flex h-(--sz-320px) flex-col overflow-hidden rounded-xl border",
       isActive
         ? "border-status-running/25 bg-status-running/[0.04]"
         : "border-border bg-background/70",
@@ -203,16 +215,16 @@ const AgentRunCard = memo(function AgentRunCard({
                 scan={cad.scan}
                 className="shrink-0"
               />
-              <Identity name={run.agentName} size="sm" className="[&>span:last-child]:!text-[11px]" />
+              <Identity name={run.agentName} size="sm" className="[&>span:last-child]:!text-(length:--text-micro)" />
             </div>
-            <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <div className="mt-2 flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
               <span>{isActive ? "Live now" : run.finishedAt ? `Finished ${relativeTime(run.finishedAt)}` : `Started ${relativeTime(run.createdAt)}`}</span>
             </div>
           </div>
 
           <Link
             to={`/agents/${run.agentId}/runs/${run.id}`}
-            className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-(length:--text-nano) text-muted-foreground transition-colors hover:text-foreground"
           >
             <ExternalLink className="h-2.5 w-2.5" />
           </Link>

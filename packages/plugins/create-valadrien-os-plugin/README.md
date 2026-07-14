@@ -1,6 +1,6 @@
 # @valadrien-os/create-valadrien-os-plugin
 
-Scaffolding tool for creating new ValAdrien OS plugins.
+Scaffolding tool for creating new ValadrienOs plugins.
 
 ```bash
 npx @valadrien-os/create-valadrien-os-plugin my-plugin
@@ -13,7 +13,7 @@ npx @valadrien-os/create-valadrien-os-plugin @acme/my-plugin \
   --template connector \
   --category connector \
   --display-name "Acme Connector" \
-  --description "Syncs Acme data into ValAdrien OS" \
+  --description "Syncs Acme data into ValadrienOs" \
   --author "Acme Inc"
 ```
 
@@ -27,14 +27,14 @@ Generates:
 - `esbuild` and `rollup` config files using SDK bundler presets
 - dev server script for hot-reload (`valadrien-os-plugin-dev-server`)
 
-The scaffold starts with plain React elements so the generated plugin stays minimal. For ValAdrien OS-native controls, import shared host components such as `MarkdownEditor`, `FileTree`, `AssigneePicker`, and `ProjectPicker` from `@valadrien-os/plugin-sdk/ui`.
+The scaffold starts with plain React elements so the generated plugin stays minimal. For ValadrienOs-native controls, import shared host components such as `MarkdownEditor`, `FileTree`, `AssigneePicker`, and `ProjectPicker` from `@valadrien-os/plugin-sdk/ui`.
 
 Inside this repo, the generated package uses `@valadrien-os/plugin-sdk` via `workspace:*`.
 
-Outside this repo, the scaffold snapshots `@valadrien-os/plugin-sdk` from your local ValAdrien OS checkout into a `.valadrien-os-sdk/` tarball and points the generated package at that local file by default. You can override the SDK source explicitly:
+Outside this repo, the scaffold snapshots `@valadrien-os/plugin-sdk` from your local ValadrienOs checkout into a `.valadrien-os-sdk/` tarball and points the generated package at that local file by default. You can override the SDK source explicitly:
 
 ```bash
-node packages/plugins/create-valadrien-os-plugin/dist/index.js @acme/my-plugin \
+node packages/plugins/create-valadrien-os-plugin/dist/bin.js @acme/my-plugin \
   --output /absolute/path/to/plugins \
   --sdk-path /absolute/path/to/valadrien-os/packages/plugins/sdk
 ```

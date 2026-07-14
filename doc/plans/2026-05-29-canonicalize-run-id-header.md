@@ -96,7 +96,7 @@ describe("rebrand drift guards", () => {
 - Changing the wire semantics. The compat shim only adds an alternate
   recognized spelling; it never changes how runs are matched, scoped, or
   audited.
-- Touching `paperclip_*` legacy strings — those are handled in the existing
+- Touching `valadrien_os_*` legacy strings — those are handled in the existing
   `2b7eb069` / `744341e5` follow-up commits.
 
 ## Acceptance

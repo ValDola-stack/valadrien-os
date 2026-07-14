@@ -63,6 +63,42 @@ describe("dev-runner worktree env bootstrap", () => {
     expect(env.VALADRIEN_OS_OPTIONAL).toBe("");
   });
 
+  it("repairs stale migrated config paths before loading worktree env", () => {
+    const root = createTempRoot("valadrien-os-dev-runner-worktree-migrated-env-");
+    const localConfigPath = path.join(root, ".valadrien-os", "config.json");
+    const worktreesDir = path.join(root, ".valadrien-os-worktrees");
+    fs.mkdirSync(path.dirname(localConfigPath), { recursive: true });
+    fs.writeFileSync(path.join(root, ".git"), "gitdir: /tmp/valadrien-os/.git/worktrees/feature\n", "utf8");
+    fs.writeFileSync(localConfigPath, "{}\n", "utf8");
+    fs.writeFileSync(
+      resolveWorktreeEnvFilePath(root),
+      [
+        "VALADRIEN_OS_HOME=/old/home/.valadrien-os-worktrees",
+        "VALADRIEN_OS_INSTANCE_ID=feature-worktree",
+        "VALADRIEN_OS_CONFIG=/old/home/valadrien-os/.valadrien-os/worktrees/feature/.valadrien-os/config.json",
+        "VALADRIEN_OS_CONTEXT=/old/home/.valadrien-os-worktrees/context.json",
+        "VALADRIEN_OS_IN_WORKTREE=true",
+        "VALADRIEN_OS_WORKTREE_NAME=feature-worktree",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const env: NodeJS.ProcessEnv = {
+      VALADRIEN_OS_WORKTREES_DIR: worktreesDir,
+    };
+    const result = bootstrapDevRunnerWorktreeEnv(root, env);
+
+    expect(result).toEqual({
+      envPath: resolveWorktreeEnvFilePath(root),
+      missingEnv: false,
+    });
+    expect(env.VALADRIEN_OS_HOME).toBe(worktreesDir);
+    expect(env.VALADRIEN_OS_CONFIG).toBe(localConfigPath);
+    expect(env.VALADRIEN_OS_CONTEXT).toBe(path.join(worktreesDir, "context.json"));
+    expect(env.VALADRIEN_OS_INSTANCE_ID).toBe("feature-worktree");
+  });
+
   it("reports uninitialized linked worktrees so dev runner can fail fast", () => {
     const root = createTempRoot("valadrien-os-dev-runner-worktree-missing-");
     fs.writeFileSync(path.join(root, ".git"), "gitdir: /tmp/valadrien-os/.git/worktrees/feature\n", "utf8");

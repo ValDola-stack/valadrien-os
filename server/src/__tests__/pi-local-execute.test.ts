@@ -130,8 +130,11 @@ describe("pi_local execute", () => {
           model: "google/gemini-3-flash-preview",
           promptTemplate: "Keep working.",
           valadrienOsRuntimeSkills: [
-            { key: "demo-skill", runtimeName: "demo-skill", source: skillDir, required: true },
+            { key: "demo-skill", runtimeName: "demo-skill", source: skillDir },
           ],
+          valadrienOsSkillSync: {
+            desiredSkills: ["demo-skill"],
+          },
         },
         context: {},
         authToken: "run-jwt-token",
@@ -185,10 +188,10 @@ describe("pi_local execute", () => {
           cwd: workspace,
           model: "google/gemini-3-flash-preview",
           promptTemplate: "Keep working.",
-          // required:false with no explicit valadrienOsSkillSync preference →
+          // No explicit valadrienOsSkillSync preference →
           // resolveValadrienOsDesiredSkillNames returns [] → skill is not injected.
           valadrienOsRuntimeSkills: [
-            { key: "not-injected", runtimeName: "not-injected", source: nonInjectedSkillDir, required: false },
+            { key: "not-injected", runtimeName: "not-injected", source: nonInjectedSkillDir },
           ],
         },
         context: {},

@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { History } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 const ACTIVITY_PAGE_LIMIT = 200;
 
@@ -206,7 +207,7 @@ export function Activity() {
           )}
         </div>
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
+          <SelectTrigger className="w-(--sz-140px) h-8 text-xs">
             <SelectValue placeholder="Filter by type" />
           </SelectTrigger>
           <SelectContent>
@@ -227,14 +228,14 @@ export function Activity() {
       )}
 
       {filtered && filtered.length > 0 && (
-        <div className="space-y-5">
+        <Card className="block py-0 overflow-hidden divide-y divide-border">
           {groupByDay(filtered).map((group) => (
             <div key={group.label}>
-              <div className="mb-2 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/70">
+              <div className="flex items-center gap-3 px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground/70">
                 {group.label}
                 <span className="h-px flex-1 bg-border/70" />
               </div>
-              <div className="border border-border divide-y divide-border">
+              <div className="divide-y divide-border border-t border-border">
                 {group.events.map((event) => (
                   <ActivityRow
                     key={event.id}
@@ -249,7 +250,7 @@ export function Activity() {
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );

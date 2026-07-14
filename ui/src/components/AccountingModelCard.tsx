@@ -24,9 +24,10 @@ const SURFACES = [
 
 export function AccountingModelCard() {
   return (
-    <Card className="relative overflow-hidden border-border">
+    <Card className="relative overflow-hidden border-border/70">
+      <div className="absolute inset-0 bg-(image:--gradient-extract-3)" />
       <CardHeader className="relative px-5 pt-5 pb-2">
-        <CardTitle className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <CardTitle className="text-sm font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
           Accounting model
         </CardTitle>
         <CardDescription className="max-w-2xl text-sm leading-6">

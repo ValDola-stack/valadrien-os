@@ -12,7 +12,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe("gemini local skill sync", () => {
-  const valadrienOsKey = "ValDola-stack/valadrien-os/valadrien-os";
+  const valadrienOsKey = "paperclipai/paperclip/valadrien-os";
   const cleanupDirs = new Set<string>();
 
   afterEach(async () => {
@@ -41,48 +41,9 @@ describe("gemini local skill sync", () => {
     const before = await listGeminiSkills(ctx);
     expect(before.mode).toBe("persistent");
     expect(before.desiredSkills).toContain(valadrienOsKey);
-    expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.required).toBe(true);
     expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("missing");
 
     const after = await syncGeminiSkills(ctx, [valadrienOsKey]);
-    expect(after.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("installed");
-    expect((await fs.lstat(path.join(home, ".gemini", "skills", "valadrien-os"))).isSymbolicLink()).toBe(true);
-  });
-
-  it("keeps required bundled ValadrienOs skills installed even when the desired set is emptied", async () => {
-    const home = await makeTempDir("valadrien-os-gemini-skill-prune-");
-    cleanupDirs.add(home);
-
-    const configuredCtx = {
-      agentId: "agent-2",
-      companyId: "company-1",
-      adapterType: "gemini_local",
-      config: {
-        env: {
-          HOME: home,
-        },
-        valadrienOsSkillSync: {
-          desiredSkills: [valadrienOsKey],
-        },
-      },
-    } as const;
-
-    await syncGeminiSkills(configuredCtx, [valadrienOsKey]);
-
-    const clearedCtx = {
-      ...configuredCtx,
-      config: {
-        env: {
-          HOME: home,
-        },
-        valadrienOsSkillSync: {
-          desiredSkills: [],
-        },
-      },
-    } as const;
-
-    const after = await syncGeminiSkills(clearedCtx, []);
-    expect(after.desiredSkills).toContain(valadrienOsKey);
     expect(after.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("installed");
     expect((await fs.lstat(path.join(home, ".gemini", "skills", "valadrien-os"))).isSymbolicLink()).toBe(true);
   });

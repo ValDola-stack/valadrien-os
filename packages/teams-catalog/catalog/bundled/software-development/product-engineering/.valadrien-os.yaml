@@ -1,0 +1,5 @@
+schema: valadrien-os/v1
+agents:
+  cto:
+    permissions:
+      canCreateAgents: true

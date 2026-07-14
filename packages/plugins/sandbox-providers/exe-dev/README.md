@@ -14,7 +14,7 @@ From a ValAdrien OS instance, install:
 
 ## Configuration
 
-Configure exe.dev from `Company Settings -> Environments`, not from the plugin's instance settings page.
+Configure exe.dev from `Instance Settings -> Environments`, not from the plugin's plugin page.
 
 - Put the exe.dev API token on the sandbox environment itself.
 - When you save an environment, ValAdrien OS stores pasted API keys and pasted SSH private keys as company secrets.

@@ -1,0 +1,45 @@
+name: upstream-drift
+# Cloud-side drift monitor: runs even when the Mac is offline.
+# Notifies the ntfy topic when the fork falls >= BEHIND_WARN commits behind
+# paperclipai/paperclip. Read-only; never merges anything.
+#
+# Setup: add repo secret NTFY_TOPIC (Settings -> Secrets -> Actions).
+on:
+  schedule:
+    - cron: "0 12 * * 1,4" # Mon & Thu 12:00 UTC (08:00 New York)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      BEHIND_WARN: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Measure drift
+        id: drift
+        run: |
+          git remote add upstream https://github.com/paperclipai/paperclip.git
+          git fetch upstream master --quiet
+          BEHIND=$(git rev-list --count origin/master..upstream/master)
+          AHEAD=$(git rev-list --count upstream/master..origin/master)
+          LATEST=$(git log -1 --format='%h %s' upstream/master)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Fork is $BEHIND behind / $AHEAD ahead. Latest upstream: $LATEST"
+      - name: Notify ntfy
+        if: ${{ steps.drift.outputs.behind >= 25 && secrets.NTFY_TOPIC != '' }}
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          curl -fsS -m 10 \
+            -H "Title: valadrien-os: ${{ steps.drift.outputs.behind }} commits behind upstream" \
+            -H "Tags: arrows_counterclockwise" \
+            -d "Latest upstream: ${{ steps.drift.outputs.latest }}. Run scripts/sync/sync-upstream.sh on the Mac when ready." \
+            "https://ntfy.sh/$NTFY_TOPIC"

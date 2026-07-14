@@ -168,7 +168,7 @@ describeEmbeddedPostgres("cleanup removal services", () => {
     await db.insert(companySkills).values({
       id: randomUUID(),
       companyId,
-      key: "ValDola-stack/valadrien-os/valadrien-os",
+      key: "paperclipai/paperclip/valadrien-os",
       slug: "valadrien-os",
       name: "ValadrienOs",
       markdown: "# ValadrienOs",

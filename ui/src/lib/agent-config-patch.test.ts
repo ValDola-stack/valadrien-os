@@ -220,4 +220,28 @@ describe("buildAgentUpdatePatch", () => {
       replaceAdapterConfig: true,
     });
   });
+
+  it("preserves valadrien-os skill-sync selections when changing adapter types", () => {
+    // Desired skills are adapter-agnostic (company-level selections) but are
+    // persisted inside the per-adapter config under `valadrienOsSkillSync`. A
+    // patch that switches adapters must carry them over instead of wiping the
+    // agent's skills.
+    const agent = makeAgent();
+    agent.adapterConfig = {
+      ...agent.adapterConfig,
+      valadrienOsSkillSync: { desiredSkills: ["research", "code-review"] },
+    };
+
+    const patch = buildAgentUpdatePatch(
+      agent,
+      makeOverlay({
+        adapterType: "codex_local",
+        adapterConfig: { model: "gpt-5.4" },
+      }),
+    );
+
+    expect((patch.adapterConfig as Record<string, unknown>).valadrienOsSkillSync).toEqual({
+      desiredSkills: ["research", "code-review"],
+    });
+  });
 });

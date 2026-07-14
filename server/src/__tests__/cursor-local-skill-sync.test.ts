@@ -19,7 +19,7 @@ async function createSkillDir(root: string, name: string) {
 }
 
 describe("cursor local skill sync", () => {
-  const valadrienOsKey = "ValDola-stack/valadrien-os/valadrien-os";
+  const valadrienOsKey = "paperclipai/paperclip/valadrien-os";
   const cleanupDirs = new Set<string>();
 
   afterEach(async () => {
@@ -48,7 +48,6 @@ describe("cursor local skill sync", () => {
     const before = await listCursorSkills(ctx);
     expect(before.mode).toBe("persistent");
     expect(before.desiredSkills).toContain(valadrienOsKey);
-    expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.required).toBe(true);
     expect(before.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("missing");
 
     const after = await syncCursorSkills(ctx, [valadrienOsKey]);
@@ -78,8 +77,6 @@ describe("cursor local skill sync", () => {
             key: "valadrien-os",
             runtimeName: "valadrien-os",
             source: valadrienOsDir,
-            required: true,
-            requiredReason: "Bundled ValadrienOs skills are always available for local adapters.",
           },
           {
             key: "ascii-heart",
@@ -95,7 +92,7 @@ describe("cursor local skill sync", () => {
 
     const before = await listCursorSkills(ctx);
     expect(before.warnings).toEqual([]);
-    expect(before.desiredSkills).toEqual(["valadrien-os", "ascii-heart"]);
+    expect(before.desiredSkills).toEqual(["ascii-heart"]);
     expect(before.entries.find((entry) => entry.key === "ascii-heart")?.state).toBe("missing");
 
     const after = await syncCursorSkills(ctx, ["ascii-heart"]);
@@ -104,41 +101,4 @@ describe("cursor local skill sync", () => {
     expect((await fs.lstat(path.join(home, ".cursor", "skills", "ascii-heart"))).isSymbolicLink()).toBe(true);
   });
 
-  it("keeps required bundled ValadrienOs skills installed even when the desired set is emptied", async () => {
-    const home = await makeTempDir("valadrien-os-cursor-skill-prune-");
-    cleanupDirs.add(home);
-
-    const configuredCtx = {
-      agentId: "agent-2",
-      companyId: "company-1",
-      adapterType: "cursor",
-      config: {
-        env: {
-          HOME: home,
-        },
-        valadrienOsSkillSync: {
-          desiredSkills: [valadrienOsKey],
-        },
-      },
-    } as const;
-
-    await syncCursorSkills(configuredCtx, [valadrienOsKey]);
-
-    const clearedCtx = {
-      ...configuredCtx,
-      config: {
-        env: {
-          HOME: home,
-        },
-        valadrienOsSkillSync: {
-          desiredSkills: [],
-        },
-      },
-    } as const;
-
-    const after = await syncCursorSkills(clearedCtx, []);
-    expect(after.desiredSkills).toContain(valadrienOsKey);
-    expect(after.entries.find((entry) => entry.key === valadrienOsKey)?.state).toBe("installed");
-    expect((await fs.lstat(path.join(home, ".cursor", "skills", "valadrien-os"))).isSymbolicLink()).toBe(true);
-  });
 });

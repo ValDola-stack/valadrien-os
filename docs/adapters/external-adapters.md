@@ -15,6 +15,22 @@ ValAdrien OS supports external adapter plugins that can be installed from npm pa
 | Distribution | Ships with ValAdrien OS | Published to npm or linked via `file:` |
 | Updates | Requires ValAdrien OS release | Independent versioning |
 
+### Built-in Hermes compatibility note
+
+Hermes is built in with two stable adapter type keys:
+
+- `hermes_local` starts the local Hermes CLI from
+  `@valadrien-os/hermes-paperclip-adapter`.
+- `hermes_gateway` calls an already-running Hermes API server through
+  `@valadrien-os/hermes-paperclip-adapter/gateway`.
+
+The legacy `@valadrien-os/adapter-hermes-gateway` package is a deprecated
+compatibility shim for one release. It preserves the old gateway exports while
+forwarding to the unified Hermes package. New external override packages should
+depend on or link `@valadrien-os/hermes-paperclip-adapter` and declare the type
+they override (`hermes_local` or `hermes_gateway`); the type keys did not
+change.
+
 ## Quick Start
 
 ### Minimal Package Structure
@@ -100,7 +116,7 @@ The plugin loader calls `createServerAdapter()` from your package root. This fun
 
 ```ts
 export const type = "my_adapter";     // snake_case, globally unique
-export const label = "My Agent (local)";
+export const label = "My Agent";
 
 export const models = [
   { id: "model-a", label: "Model A" },

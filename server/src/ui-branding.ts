@@ -16,6 +16,13 @@ export type WorktreeUiBranding = {
   color: string | null;
   textColor: string | null;
   faviconHref: string | null;
+  /**
+   * Runtime instance id for this worktree preview. Surfaced to the client so
+   * the experimental "Run tasks in this worktree" card can fail closed when a
+   * copied settings row was armed in a different instance. Null outside a
+   * worktree or when the runtime id is unset.
+   */
+  instanceId: string | null;
 };
 
 function isTruthyEnvValue(value: string | undefined): boolean {
@@ -152,6 +159,7 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
       color: null,
       textColor: null,
       faviconHref: null,
+      instanceId: null,
     };
   }
 
@@ -165,6 +173,7 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
     color,
     textColor,
     faviconHref: createFaviconDataUrl(color, textColor),
+    instanceId: nonEmpty(env.VALADRIEN_OS_INSTANCE_ID),
   };
 }
 
@@ -181,12 +190,16 @@ export function renderFaviconLinks(branding: WorktreeUiBranding): string {
 export function renderRuntimeBrandingMeta(branding: WorktreeUiBranding): string {
   if (!branding.enabled || !branding.name || !branding.color || !branding.textColor) return "";
 
-  return [
+  const tags = [
     '<meta name="valadrien-os-worktree-enabled" content="true" />',
     `<meta name="valadrien-os-worktree-name" content="${escapeHtmlAttribute(branding.name)}" />`,
     `<meta name="valadrien-os-worktree-color" content="${escapeHtmlAttribute(branding.color)}" />`,
     `<meta name="valadrien-os-worktree-text-color" content="${escapeHtmlAttribute(branding.textColor)}" />`,
-  ].join("\n");
+  ];
+  if (branding.instanceId) {
+    tags.push(`<meta name="valadrien-os-instance-id" content="${escapeHtmlAttribute(branding.instanceId)}" />`);
+  }
+  return tags.join("\n");
 }
 
 function replaceMarkedBlock(html: string, startMarker: string, endMarker: string, content: string): string {

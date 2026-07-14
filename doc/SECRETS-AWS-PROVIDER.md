@@ -4,7 +4,7 @@ Operational contract for the hosted `aws_secrets_manager` secret provider used b
 
 ## Scope
 
-- Hosted provider for ValAdrien OS-managed secrets when ValAdrien OS Cloud runs on AWS.
+- Hosted provider for ValadrienOs-managed company and user-scoped secrets when ValadrienOs Cloud runs on AWS.
 - Source of truth for secret values is AWS Secrets Manager, not Postgres.
 - ValAdrien OS stores only metadata needed for ownership, bindings, version selection, audit, and runtime resolution.
 - AWS provider bootstrap credentials are deployment/runtime credentials, not ValAdrien OS-managed company secrets.
@@ -120,6 +120,25 @@ Tag set for ValAdrien OS-managed secrets:
 - `valadrien-os:secret-key=<secret key>`
 - `valadrien-os:environment=<environment tag>`
 
+When the user-secret service creates ValadrienOs-managed AWS values, keep them
+under the same deployment/company namespace. The secret-key segment should be
+non-sensitive and collision-safe for the user-secret value, normally derived
+from the definition key plus an opaque credential-owner subject. Do not put
+emails, personal names, OAuth scopes, ticket identifiers, or plaintext
+credential material in AWS secret names, descriptions, or tags.
+
+For operator-owned external references, prefer a separate approved prefix such
+as:
+
+```text
+valadrien-os-ext/<environment>/<company-id>/user-secrets/<definition-key>/<opaque-owner-id>
+```
+
+ValadrienOs stores the external ref and provider version as metadata. Treat those
+fields as secret-adjacent: they must be redacted from comments, activity logs,
+run transcripts, issue documents, and broad board views unless a route is
+explicitly designed to show sanitized provider metadata.
+
 ## IAM And KMS Assumptions
 
 Launch posture:
@@ -223,6 +242,14 @@ If selected external secrets use customer-managed KMS keys, also grant
 permissions scoped to `valadrien-os/<deployment-id>/*`; do not broaden them for
 remote import.
 
+The same rule applies to user-scoped external refs. ValadrienOs derives the
+responsible user and credential owner before resolution, but AWS IAM still
+decides whether the runtime role can read the selected ARN/path. If the runtime
+role can read a broad external prefix, that access is broader than ValadrienOs's
+metadata policy. Use dedicated provider vaults, accounts, Regions, prefixes,
+KMS keys, or runtime roles when provider-side isolation must match a
+user-secret boundary.
+
 Safe scoping guidance:
 
 - Prefer one ValAdrien OS runtime role per environment/account.
@@ -287,17 +314,25 @@ Guidance:
 
 What must survive:
 
-- ValAdrien OS database metadata for secret ownership, bindings, status, and provider version refs.
+- ValadrienOs database metadata for secret ownership, bindings, status, and provider version refs.
+- User-secret definitions, declarations, `company_secrets.scope = 'user'`
+  value rows, owner user ids, responsible-user snapshots, access-event
+  metadata, and provider version refs.
 - AWS Secrets Manager namespace under the configured deployment prefix.
+- Any operator-owned external AWS prefixes linked by user-scoped external refs.
 - The configured KMS key and its decrypt permissions.
 
 Restore checklist:
 
 1. Restore ValAdrien OS database metadata.
 2. Confirm the same AWS Secrets Manager namespace still exists.
-3. Confirm the ValAdrien OS runtime role can call `GetSecretValue` on the restored prefix.
-4. Confirm the role still has decrypt access to the CMK referenced by `VALADRIEN_OS_SECRETS_AWS_KMS_KEY_ID`.
-5. Run the live smoke below or a targeted runtime secret resolution test.
+3. Confirm any linked user-scoped external prefixes still exist.
+4. Confirm the ValadrienOs runtime role can call `GetSecretValue` on the restored
+   managed prefix and approved external prefixes.
+5. Confirm the role still has decrypt access to the CMKs referenced by
+   `VALADRIEN_OS_SECRETS_AWS_KMS_KEY_ID` and by any external user-secret values.
+6. Run the live smoke below or a targeted runtime secret resolution test for
+   both a company secret and a user-secret value.
 
 ## Provider Outage Runbook
 
@@ -340,8 +375,10 @@ Potential incidents:
 
 Response steps:
 
-1. Stop or pause affected ValAdrien OS runs.
-2. Audit recent ValAdrien OS secret access events for impacted secret ids and consumers.
+1. Stop or pause affected ValadrienOs runs.
+2. Audit recent ValadrienOs secret access events for impacted secret ids and consumers.
+   For user-scoped incidents, include `credentialOwnerUserId`,
+   `responsibleUserId`, and `userSecretDefinitionId` in the review.
 3. Audit AWS CloudTrail for `ListSecrets`, `GetSecretValue`,
    `PutSecretValue`, and `DeleteSecret` calls on the relevant vault account,
    Region, deployment prefix, and approved external prefixes.
