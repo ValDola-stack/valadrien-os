@@ -606,7 +606,7 @@ export function Layout() {
             )}
           >
             <StandaloneBrowserControls mobile={isMobile} />
-            <BreadcrumbBar />
+            <BreadcrumbBar onOpenGuide={guide.show} />
             {isMobile && isCompanySettingsRoute ? (
               <div className="border-b border-border px-4 pb-3">
                 <CompanySettingsNav />

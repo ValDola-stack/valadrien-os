@@ -1,5 +1,5 @@
 import { Link } from "@/lib/router";
-import { Menu } from "lucide-react";
+import { CircleHelp, Menu } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -79,7 +79,7 @@ function InstrumentStrip({ companyId }: { companyId: string }) {
   );
 }
 
-export function BreadcrumbBar() {
+export function BreadcrumbBar({ onOpenGuide }: { onOpenGuide?: () => void } = {}) {
   const { breadcrumbs, mobileToolbar } = useBreadcrumbs();
   const { toggleSidebar, isMobile } = useSidebar();
   const { selectedCompanyId, selectedCompany } = useCompany();
@@ -97,6 +97,18 @@ export function BreadcrumbBar() {
     <div className="ml-auto flex items-center gap-2 shrink-0 pl-2">
       {selectedCompanyId ? <InstrumentStrip companyId={selectedCompanyId} /> : null}
       {globalToolbarSlots}
+      {onOpenGuide ? (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={onOpenGuide}
+          aria-label="Open the ValAdrien OS guide"
+          title="Guide & help"
+        >
+          <CircleHelp className="h-4 w-4" />
+        </Button>
+      ) : null}
     </div>
   );
 
