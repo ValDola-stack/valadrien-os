@@ -41,6 +41,7 @@ const ROLE_RANK: Record<TenantRole, number> = { viewer: 0, operator: 1, admin: 2
 /* Inline icons (16px, stroke-based, GLASSHOUSE-friendly)               */
 /* ------------------------------------------------------------------ */
 
+/** Renders a single 15px stroke-based SVG glyph from an SVG path `d` string. */
 const Icon = ({ d, ...rest }: { d: string } & React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...rest}>
@@ -83,15 +84,23 @@ type GuideSection = {
   body: React.ReactNode;
 };
 
+/** Inline keyboard-key chip, e.g. <K>⌘K</K>. */
 const K = ({ children }: { children: React.ReactNode }) => <kbd className="vg-kbd">{children}</kbd>;
+/** Inline product-term chip that mirrors a real UI label, e.g. <T>Inbox</T>. */
 const T = ({ children }: { children: React.ReactNode }) => <span className="vg-term">{children}</span>;
+/** Callout box highlighting a practical tip within a section body. */
 const Tip = ({ children }: { children: React.ReactNode }) => (
   <div className="vg-tip"><span className="vg-tip-label">Tip</span><span>{children}</span></div>
 );
+/** Callout box noting a surface may be disabled per tenant engagement. */
 const Gate = ({ children }: { children: React.ReactNode }) => (
   <div className="vg-gate">{children}</div>
 );
 
+/**
+ * Builds the ordered list of guide sections. `companyName` personalizes the
+ * welcome copy. Content is static JSX by design — no CMS or i18n layer.
+ */
 const buildSections = (companyName?: string): GuideSection[] => [
   {
     id: "welcome",
@@ -468,6 +477,11 @@ const buildSections = (companyName?: string): GuideSection[] => [
 
 const SEEN_KEY = "valadrienOs.tenantGuide.seen.v1";
 
+/**
+ * First-run state for the guide. Auto-opens once per browser (tracked in
+ * localStorage under {@link SEEN_KEY}); returns `open`, `close` (persists the
+ * seen flag), and `show` (manual reopen from the account menu).
+ */
 export function useTenantGuide(autoOpenFirstRun = true) {
   const [open, setOpen] = React.useState(false);
   React.useEffect(() => {
@@ -495,6 +509,11 @@ export interface TenantGuideProps {
   companyName?: string;
 }
 
+/**
+ * The tenant guide modal. Controlled via `open`/`onClose`. `userRole` badges
+ * role-gated sections (never hides them) and `companyName` personalizes the
+ * welcome section. Supports keyboard nav (Esc to close, ←/→ between sections).
+ */
 export function TenantGuide({ open, onClose, userRole, companyName }: TenantGuideProps) {
   const sections = React.useMemo(() => buildSections(companyName), [companyName]);
   const [activeId, setActiveId] = React.useState(sections[0].id);
