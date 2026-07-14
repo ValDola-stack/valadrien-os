@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
+  Compass,
   LogOut,
   Megaphone,
   type LucideIcon,
@@ -29,6 +30,7 @@ interface SidebarAccountMenuProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   version?: string | null;
+  onOpenGuide?: () => void;
 }
 
 interface MenuActionProps {
@@ -106,6 +108,7 @@ export function SidebarAccountMenu({
   open: controlledOpen,
   onOpenChange,
   version,
+  onOpenGuide,
 }: SidebarAccountMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -199,6 +202,17 @@ export function SidebarAccountMenu({
                 href={PROFILE_SETTINGS_PATH}
                 onClick={closeNavigationChrome}
               />
+              {onOpenGuide ? (
+                <MenuAction
+                  label="Guide"
+                  description="How to run your AI-operated company."
+                  icon={Compass}
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenGuide();
+                  }}
+                />
+              ) : null}
               <MenuAction
                 label="Documentation"
                 description="Open ValadrienOs docs in a new tab."
