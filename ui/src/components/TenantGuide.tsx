@@ -454,7 +454,7 @@ const buildSections = (companyName?: string): GuideSection[] => [
           <li><strong>Something looks stuck</strong> → Inbox, <T>blocked</T> tab, read the reason chip.</li>
           <li><strong>Spend question</strong> → Costs page before anything else.</li>
           <li><strong>Platform issue, access change, or anything this guide doesn't answer</strong> → your
-            ValAdrien.DEV operator (<a href="mailto:fva@mydola.io">fva@mydola.io</a>).</li>
+            ValAdrien.DEV operator (<a href="mailto:support@valadrien.dev">support@valadrien.dev</a>).</li>
         </ul>
         <p className="vg-muted">Reopen this guide anytime from the Help menu.</p>
       </>
