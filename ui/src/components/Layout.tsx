@@ -21,6 +21,7 @@ import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
 import { SecondarySidebar } from "./SecondarySidebar";
 import { SidebarAccountMenu } from "./SidebarAccountMenu";
+import { TenantGuide, useTenantGuide, type TenantRole } from "./TenantGuide";
 import { useDialogActions } from "../context/DialogContext";
 import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
 import { usePanel } from "../context/PanelContext";
@@ -28,6 +29,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
+import { accessApi } from "../api/access";
 import { healthApi } from "../api/health";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
@@ -157,6 +159,24 @@ export function Layout() {
     },
     refetchIntervalInBackground: true,
   });
+  // Tenant guide: auto-opens once per browser, reopenable from the account menu.
+  // Role only badges guide sections (nothing is hidden), so it's best-effort —
+  // reuses the shared board-access query key so this adds no extra request.
+  const guide = useTenantGuide();
+  const { data: boardAccess } = useQuery({
+    queryKey: queryKeys.access.currentBoardAccess,
+    queryFn: () => accessApi.getCurrentBoardAccess(),
+    retry: false,
+  });
+  const guideUserRole = useMemo<TenantRole | undefined>(() => {
+    if (!selectedCompanyId) return undefined;
+    const role = boardAccess?.memberships?.find(
+      (membership) => membership.companyId === selectedCompanyId,
+    )?.membershipRole;
+    return role === "owner" || role === "admin" || role === "operator" || role === "viewer"
+      ? role
+      : undefined;
+  }, [boardAccess, selectedCompanyId]);
   const keyboardShortcutsEnabled = useQuery({
     queryKey: queryKeys.instance.generalSettings,
     queryFn: () => instanceSettingsApi.getGeneral(),
@@ -550,6 +570,7 @@ export function Layout() {
             <SidebarAccountMenu
               deploymentMode={health?.deploymentMode}
               version={health?.version}
+              onOpenGuide={guide.show}
             />
           </div>
         ) : (
@@ -569,6 +590,7 @@ export function Layout() {
             <SidebarAccountMenu
               deploymentMode={health?.deploymentMode}
               version={health?.version}
+              onOpenGuide={guide.show}
             />
           </SidebarShell>
         )}
@@ -628,6 +650,12 @@ export function Layout() {
       <NewGoalDialog />
       <NewAgentDialog />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <TenantGuide
+        open={guide.open}
+        onClose={guide.close}
+        userRole={guideUserRole}
+        companyName={selectedCompany?.name}
+      />
       <ToastViewport />
       </div>
     </GeneralSettingsProvider>
