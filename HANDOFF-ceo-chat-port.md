@@ -1,6 +1,6 @@
 # HANDOFF — Advisory Chat (CEO / Portfolio Assistant) port
 
-**Status:** UI landed (this branch, local only — not pushed). Server endpoint NOT built — needs the server/runtime session.
+**Status:** UI **and** server endpoint landed on this branch. Remaining: set `ANTHROPIC_API_KEY` on the deployment and do a live streaming smoke (needs a running server + key).
 **Branch:** `feat/ceo-chat-port` (cut from `origin/master`).
 **Provenance:** ported from the archived `management-os` dashboard, commit `69533a0`
 ("feat(dashboard): CEO Chat, portfolio Assistant, and per-project Org Chart").
@@ -27,7 +27,7 @@ issue-chat and Claude *billing* panels, but no advisory chat). That is what was 
 
 ---
 
-## What landed (UI only — in-lane)
+## What landed — UI (`ui/`)
 
 - `ui/src/components/chat/ChatPanel.tsx` — the chat surface. Streams from
   `POST /api/chat`, renders assistant output via the repo's `MarkdownBody`.
@@ -39,49 +39,44 @@ issue-chat and Claude *billing* panels, but no advisory chat). That is what was 
 
 ---
 
-## What the SERVER session must build (out of my UI lane)
+## What landed — server (`server/src/routes/chat.ts`)
 
-### 1. `POST /api/chat` on the Express server (`server/src`)
-valadrien-os has **no per-route file model** — `/api/*` is the Express app booted by
-`api/index.mjs → server/dist/index.js`. Add the route there, not as a standalone file.
+`POST /api/chat` is implemented and registered (`api.use(chatRoutes(db))` in
+`server/src/app.ts`, before the `/api` 404 fallthrough). Server typechecks and builds
+to `dist` clean.
 
-**Request contract the UI already sends:**
-```jsonc
-{ "mode": "assistant" | "ceo",
-  "companySlug": "optional-string",   // present in ceo mode
-  "messages": [ { "role": "user" | "assistant", "content": "…" } ] }
-```
-**Response contract the UI expects:** a streamed **`text/plain`** body of raw text
-chunks (NOT SSE) — `ChatPanel` reads `res.body.getReader()` and appends decoded text
-verbatim. Non-2xx: return a short text error (rendered as the assistant reply).
+- **Auth:** `assertBoard(req)` — operator/board only, throws 403 before any stream headers.
+- **Request contract** (what the UI sends): `{ mode: "assistant"|"ceo", companySlug?, messages: [{role,content}] }`.
+- **Response contract:** streamed `text/plain` (NOT SSE) — the raw Anthropic
+  `content_block_delta` text deltas are written straight to the Express response;
+  `ChatPanel` reads them via `res.body.getReader()`. Errors are written as a short
+  text reply, never thrown after headers.
+- **Model call:** raw HTTPS to the Anthropic Messages API via Node's global `fetch`
+  (`stream: true`) — deliberately **no `@anthropic-ai/sdk` dependency added** to the
+  shared server lockfile for a single v1 endpoint. Swap to the SDK if the surface grows.
+- **Data grounding — remapped to valadrien-os's own services** (not the source's
+  management-os Supabase tables): assistant mode uses `companyService.list()` (names +
+  `spentMonthlyCents` / `budgetMonthlyCents`); CEO mode resolves the company
+  (`getById`, name fallback) then `dashboardService.summary()` (agents / tasks / costs /
+  pendingApprovals) + `agentService.list()`. Money is in **cents** → formatted to USD.
+- **Model default:** `claude-opus-4-8` (per claude-api guidance), override via
+  `CHAT_MODEL`; `CHAT_MAX_TOKENS` default 1500. No thinking config — keeps first-token
+  latency low for a chat surface.
 
-**Model call:** Anthropic Messages API, `stream: true`, forward `content_block_delta`
-text deltas to the response stream. Reference implementation to translate:
-`git show 69533a0:dashboard/src/app/api/chat/route.ts` (from the bundle above).
-
-**Env:** `ANTHROPIC_API_KEY` (required), `CHAT_MODEL` (default in source was
-`claude-sonnet-4-6`), `CHAT_MAX_TOKENS` (default 1500). Confirm current model id.
-
-### 2. Data grounding must be REMAPPED — do not copy the source queries
-The source built its system prompt from Supabase tables queried directly:
-`companies`, `agents`, `tasks`, `cost_logs`, `blockers`. **Those are the management-os
-schema, not valadrien-os.** Here that data lives behind the server/db layer
-(`packages/db`, surfaced by the `Costs`, `Approvals`, `Issues`, `Goals`, `Agents`
-pages). Re-derive the grounded context (month spend, open blockers/approvals, agents,
-recent tasks/issues) from valadrien-os's own services/schema. `cost_logs`/`blockers`
-only appear here in onboarding docs + tests — treat the source query names as intent,
-not literal.
-
-### 3. Auth
-Source gated on an allowlisted `user.email`. Reuse valadrien-os's existing request
-auth / access gate for `/api/chat`.
+### Remaining for the deployment owner
+1. **Set `ANTHROPIC_API_KEY`** in the server env (Railway / Vercel). Without it the
+   endpoint streams a "not configured yet" message — the UI still renders.
+2. **Live smoke:** with the key set and a booted server, hit `/api/chat` as a board
+   user and confirm tokens stream. (Not runnable from a bare checkout — needs the built
+   workspace + DB + key; that's why it wasn't done here.)
 
 ---
 
 ## Follow-ups (optional, not blocking)
 
-- **CEO-mode wiring:** `ChatPanel` already supports `mode="ceo"` + `companySlug`.
-  Add a collapsible CEO-chat entry to a company detail page when desired.
+- **CEO-mode wiring:** `ChatPanel` already supports `mode="ceo"` + `companySlug`, and
+  the server resolves a company by id or name. Add a collapsible CEO-chat entry to a
+  company detail page when desired (pass the company id as `companySlug`).
 - **DESIGN.md conformance:** the ported panel uses decorative `violet-600` (CEO) /
   `orange-500` (assistant) accents for mode distinction. DESIGN.md is dark-first,
   "color means a state, never decoration," Sodium-amber accent. **This is a known
