@@ -33,6 +33,7 @@ interface LayoutNode {
   name: string;
   role: string;
   status: string;
+  portraitUrl?: string | null;
   x: number;
   y: number;
   children: LayoutNode[];
@@ -85,6 +86,7 @@ function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
     name: node.name,
     role: node.role,
     status: node.status,
+    portraitUrl: node.portraitUrl ?? null,
     x: x + (totalW - CARD_W) / 2,
     y,
     children: layoutChildren,
@@ -638,7 +640,7 @@ export function OrgChart() {
                   {/* Agent portrait (framed eyes + status ring) + granular status dot */}
                   <div className="relative shrink-0">
                     <AgentPortrait
-                      src={null}
+                      src={node.portraitUrl ?? null}
                       name={node.name}
                       state={liveState}
                       size={36}

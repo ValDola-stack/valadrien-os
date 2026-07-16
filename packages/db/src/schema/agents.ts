@@ -20,6 +20,10 @@ export const agents = pgTable(
     role: text("role").notNull().default("general"),
     title: text("title"),
     icon: text("icon"),
+    // Generated character portrait (GLASSHOUSE identity layer). URL is /api/assets/<id>/content;
+    // null falls back to the animated eyes face in <AgentPortrait>. Populated by the rebrand
+    // lineage's generation pipeline; read-path restored during reconciliation.
+    portraitUrl: text("portrait_url"),
     status: text("status").notNull().default("idle"),
     reportsTo: uuid("reports_to").references((): AnyPgColumn => agents.id),
     capabilities: text("capabilities"),

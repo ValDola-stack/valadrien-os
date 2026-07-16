@@ -1124,7 +1124,7 @@ export function AgentDetail() {
           >
             <button className="shrink-0 transition-opacity hover:opacity-80" title="Change icon">
               <AgentPortrait
-                src={null}
+                src={agent.portraitUrl ?? null}
                 name={agent.name}
                 state={agentLiveState(agent.status)}
                 size={48}

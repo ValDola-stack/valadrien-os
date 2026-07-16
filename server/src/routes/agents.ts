@@ -1693,6 +1693,7 @@ export function agentRoutes(
       name: String(node.name),
       role: String(node.role),
       status: String(node.status),
+      portraitUrl: node.portraitUrl ? String(node.portraitUrl) : null,
       reports,
     };
   }
