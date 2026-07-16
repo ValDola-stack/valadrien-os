@@ -61,6 +61,8 @@ import {
   collectAgentAdapterWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
+import type { StorageService } from "../storage/types.js";
+import { agentPortraitService } from "../services/agent-portraits.js";
 import { environmentService } from "../services/environments.js";
 import { resolveEnvironmentExecutionTarget } from "../services/environment-execution-target.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -139,8 +141,11 @@ function readRunIssueId(context: Record<string, unknown> | null) {
 
 export function agentRoutes(
   db: Db,
-  options: { pluginWorkerManager?: PluginWorkerManager } = {},
+  options: { pluginWorkerManager?: PluginWorkerManager; storageService?: StorageService } = {},
 ) {
+  // Portrait generation runs on the control plane (GEMINI_API_KEY + object storage). Null when
+  // storage is unavailable; the animated-eyes fallback covers agents without a generated portrait.
+  const portraits = options.storageService ? agentPortraitService(db, options.storageService) : null;
   // Legacy hardcoded maps — used as fallback when adapter module does not
   // declare capability flags explicitly.
   const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
@@ -1985,6 +1990,40 @@ export function agentRoutes(
     res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
   });
 
+  // Generate (or regenerate) one agent's GLASSHOUSE portrait. Runs on the control plane where the
+  // GEMINI_API_KEY + object storage live.
+  router.post("/companies/:companyId/agents/:agentId/portrait", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const agentId = req.params.agentId as string;
+    await assertCanCreateAgentsForCompany(req, companyId);
+    if (!portraits) {
+      res.status(503).json({ error: "Portrait generation is not configured (object storage unavailable)" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const result = await portraits.generateForAgent(companyId, agentId, {
+      agentId: actor.agentId,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    res.status(201).json(result);
+  });
+
+  // Generate portraits for every agent in the company that has none yet (one-time backfill).
+  router.post("/companies/:companyId/agents/portraits/backfill", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await assertCanCreateAgentsForCompany(req, companyId);
+    if (!portraits) {
+      res.status(503).json({ error: "Portrait generation is not configured (object storage unavailable)" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const result = await portraits.backfillCompany(companyId, {
+      agentId: actor.agentId,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    res.json(result);
+  });
+
   router.get("/instance/scheduler-heartbeats", async (req, res) => {
     assertInstanceAdmin(req);
 
@@ -2434,6 +2473,20 @@ export function agentRoutes(
 
     let approval: Awaited<ReturnType<typeof approvalsSvc.getById>> | null = null;
     const actor = getActorInfo(req);
+
+    // Auto-generate the GLASSHOUSE portrait on hire (fire-and-forget): never block or fail the hire;
+    // gated on object storage (portraits is non-null only where GEMINI_API_KEY + storage live). The
+    // animated-eyes fallback covers the brief gap while Imagen runs. Attaches to the stable agent.id.
+    if (portraits) {
+      void portraits
+        .generateForAgent(companyId, agent.id, {
+          agentId: actor.agentId,
+          userId: actor.actorType === "user" ? actor.actorId : null,
+        })
+        .catch((err) => {
+          console.warn("[agent-portraits] auto portrait generation on hire failed", { agentId: agent.id, err });
+        });
+    }
 
     if (requiresApproval) {
       const requestedAdapterType = normalizedHireInput.adapterType ?? agent.adapterType;
