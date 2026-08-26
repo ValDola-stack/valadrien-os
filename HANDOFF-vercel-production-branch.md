@@ -1,73 +1,93 @@
-# Handoff → runtime/infra session: set Vercel Production Branch (push-to-deploy is not wired)
+# HANDOFF → runtime/infra: Vercel Production Branch points at a dead lineage
 
-> **✅ RESOLVED 2026-06-07** — Production Branch set to `rebrand/valadrien-os` in
-> Settings → Environments → Production → Branch Tracking. Push-to-deploy is now wired:
-> a push to the branch builds `target: production` and auto-aliases `os.valadrien.dev`.
-> `vercel promote` is retired. This commit is the first production build from HEAD.
+> **🔴 REOPENED 2026-08-26.** This was resolved on 2026-06-07 by setting Production Branch =
+> `rebrand/valadrien-os`. **That branch is no longer the production lineage**, so the original
+> failure mode is back: pushes build previews and never ship. History of the first fix is at the
+> bottom.
+>
+> **BLOCKED** on two things outside this repo — see §3. Do not start until both are cleared.
 
-**From:** design/UI session · **Updated:** 2026-06-07 · **Priority:** HIGH — production is currently un-updatable
+## 1. The problem
 
-## TL;DR
-The team switched to a **push-to-deploy** policy ("a push to `rebrand/valadrien-os` is the
-deploy; don't run `vercel promote` anymore"). But the Vercel project setting that makes that
-true was **never applied**. So right now:
-- A push to `rebrand/valadrien-os` builds a **preview** (`target: null`), not production.
-- Production (`os.valadrien.dev`) only ever moved via `vercel promote`.
-- With `promote` now banned by policy, **nothing can update production** — it's frozen on the
-  last promoted deployment. Pushed work builds green and then silently never ships.
+Production lineage moved to **`sync/upstream-20260713`** (see the memory note: `master` is stale
+and deploying it rolls prod back). Vercel's Production Branch was never moved with it and still
+tracks **`rebrand/valadrien-os`**.
 
-**One fix:** set the project's **Production Branch = `rebrand/valadrien-os`**. Then a push
-targets production and auto-aliases `os.valadrien.dev`. No promotes, no race, no freeze.
+Consequence: **a push to `sync/upstream-20260713` builds a preview (`target: null`) and never
+reaches `os.valadrien.dev`.** Production only moves when someone runs `vercel --prod` by hand.
 
-## Confirmed evidence (today, read-only inspection)
+## 2. Evidence (from `list_deployments`, 2026-08-26)
+
+| Deployment | Commit | Ref | Trigger | target |
+|---|---|---|---|---|
+| `dpl_8XZHibpFc5SdTHcYu2vFF2vUdget` | `cb050b6f0` | `sync/upstream-20260713` | github push | **`null`** ← preview |
+| `dpl_HwfRVh6TZgmQvQFyQJqZ3Md2x7Hz` | `9716fe530` | `sync/upstream-20260713` | github push | **`null`** ← preview |
+| `dpl_CewNSgNhX2jQ7doyfe5BBw8XMmRn` | `cb050b6f0` | `sync-cutover` | CLI (`actor: claude-code_…_agent`) | `production` |
+| `dpl_3ryj7hp88xU92aKkLzpvL7gLC4xH` | `3e3f01d01` | `rebrand/valadrien-os` | github push | `production` ← the setting, still working on the OLD branch |
+
+The last row is the tell: a *push* to `rebrand/valadrien-os` still auto-targets production, which
+is only possible if that branch is still the configured Production Branch.
+
+**Note:** the current value was INFERRED from these deployment targets, not read from the setting.
+Step 0 below is to confirm it directly.
+
+## 3. Blocked on (clear both first)
+
+1. **Vercel team is payment-blocked.** `os.valadrien.dev` and `valadrien.dev` both return
+   `402` + `x-vercel-error: DEPLOYMENT_DISABLED`; project shows `"live": false` with a READY
+   deployment behind it. This is team-wide on `ValDola-stack`, not a per-project pause.
+   Lovable-hosted apps are unaffected. Fix is billing (spend limit or failed payment) in the
+   Vercel dashboard.
+2. **Local Vercel CLI token is expired** — the API returns
+   `{"code":"forbidden","invalidToken":true}`. Re-auth with `vercel login` before any CLI step.
+   (CLI is also outdated, 56.4.1 → 59.7.0.)
+
+## 4. The fix
+
 Project `valadrien-os-server` · `prj_GQOzJ3SG1yje5ze67ILqM35qHpdx` · team `team_HxifZfm9qyYJXqg21ZR8V4yo`
 
-| What | Deployment | Commit | target | Serves os.valadrien.dev? |
-|---|---|---|---|---|
-| **Live production now** | `dpl_62qdtPT7` | `35f2a524` (runtime "agent-face eyes" fix) | `production` (via `action: promote`) | **Yes** (bundle `DOfV32Fm`) |
-| **My push of HEAD** | `dpl_99K79eHF` | `f2741930` (design reconciliation) | **`null` (PREVIEW)** | **No** — git-branch alias only |
+0. **Confirm the current value** — Settings → Git → Production Branch (on newer dashboards:
+   Settings → Environments → Production → Branch Tracking). Expect `rebrand/valadrien-os`.
+   If it already reads `sync/upstream-20260713`, stop: the diagnosis above is wrong, re-triage.
+1. **Set Production Branch = `sync/upstream-20260713`** and save. Use the dashboard — this is the
+   path that demonstrably worked in June. The REST API has no documented production-branch field
+   on `PATCH /v9/projects/{id}`; don't improvise one.
+2. **Adopt the setting once** — push a trivial commit to the branch, or Redeploy the latest commit
+   with the Production target. Existing previews do NOT retroactively become production.
 
-- My push (`git push origin rebrand/valadrien-os`, HEAD `f2741930`) triggered a `source: "git"`
-  build that went **READY** — but `target: null`, so it's a preview. `os.valadrien.dev` was
-  never re-pointed.
-- Watched the live domain for ~6.5 min after the build went READY: bundle stayed `DOfV32Fm`
-  (i.e. commit `35f2a524`) the entire time. Production did not move.
-- Conclusion: this is **not** a promote-race (the earlier issue). It's that **pushes don't
-  target production at all** — the Production Branch isn't set.
+## 5. Verification
 
-## The fix (project setting — infra owns this)
-**Dashboard:** Project `valadrien-os-server` → **Settings → Git → Production Branch** →
-set to `rebrand/valadrien-os` → Save.
+1. The new deployment for that push shows **`target: "production"`** (not `null`), and its
+   `meta.githubCommitSha` equals the pushed HEAD.
+2. Its alias array includes **`os.valadrien.dev`**.
+3. `curl -s https://os.valadrien.dev/ | grep -oE 'assets/index-[^"]+\.js'` → hash changes.
+4. `curl -so /dev/null -w '%{http_code}' https://os.valadrien.dev/` → **200**, not 402.
+5. From then on: `git push` is the deploy. Stop hand-running `vercel --prod`.
 
-**Or API/CLI:** set `git.productionBranch = "rebrand/valadrien-os"` on
-`prj_GQOzJ3SG1yje5ze67ILqM35qHpdx` (team `team_HxifZfm9qyYJXqg21ZR8V4yo`).
+## 6. Open question for the owner
 
-After saving, trigger one production build from current HEAD — either push a tiny commit, or
-in the dashboard **Redeploy** the latest commit **with "Production" target** (one-time, to
-adopt the setting). Every subsequent push to the branch is then production automatically.
+`sync/upstream-20260713` is a **dated** branch name doing permanent duty as the production
+lineage. Pointing Vercel at it is correct *today* and is the zero-risk move — do that first.
+But consider separately whether that lineage should be promoted to a stable name (or `master`
+fast-forwarded onto it and made production again), so the next upstream sync doesn't recreate
+this exact drift. Don't block step 4 on deciding this.
 
-## Verification checklist (how you'll know it worked)
-1. New deployment for the push shows **`target: "production"`** (not `null`).
-   `GET get_deployment(<id>)` → `meta.githubCommitSha` == your pushed HEAD, `target: "production"`.
-2. That deployment's `alias` array **includes `os.valadrien.dev`**.
-3. `curl -s https://os.valadrien.dev/ | grep assets/index` → bundle hash **changes** from
-   `DOfV32Fm` to the new build.
-4. From then on: drop `vercel promote` everywhere. `git push` is the whole deploy.
+## 7. Related, not fixed here
 
-## Why it's safe
-- Only changes *how* production is selected (push-from-HEAD vs manual promote). No code change. Reversible.
-- `origin/rebrand/valadrien-os` HEAD = **`f2741930`** already contains **everything** from both
-  sessions (linear shared history) — the GLASSHOUSE in-company sweep (chrome, Dashboard, Agents,
-  Issues, Costs + reconciliation) AND all runtime fixes. The first production build after the
-  setting lands ships all of it at once.
+Railway (`valadrien_staff`, project `management-os`) has **no git auto-deploy at all** —
+`source: null` + Dockerfile, shipped via `railway up`. It is currently healthy
+(`/api/health` → 403 unauth = up; active deployment RUNNING). Wiring Railway to push-to-deploy
+is a separate piece of work.
 
-## Current frozen state (no design-session action; I will NOT promote)
-- Live production: `dpl_62qdtPT7` = commit `35f2a524` (does **not** include the last 2 design
-  commits `45c88aa5` + `f2741930`).
-- Those commits are safe on `origin` HEAD; they go live on the **first production build from
-  HEAD** after this setting is applied. Nothing is lost — it just can't ship until then.
+---
 
-## Interim workaround (only if production must move before the setting lands)
-Whoever owns deploys runs **one** `vercel promote <preview-of-HEAD>` (e.g. promote `dpl_99K79eHF`,
-which is HEAD `f2741930`). That ships everything on HEAD in one shot. Then apply the setting so
-no further promotes are needed. (Design session is holding per the no-promote rule.)
+## Appendix — original handoff (resolved 2026-06-07, now superseded)
+
+The team switched to a push-to-deploy policy but never applied the Vercel setting, so pushes to
+`rebrand/valadrien-os` built previews (`target: null`) while production only moved via
+`vercel promote` — which policy had just banned, freezing production entirely. Fixed by setting
+Production Branch = `rebrand/valadrien-os` in Settings → Environments → Production → Branch
+Tracking; `vercel promote` was retired at that point.
+
+That fix was correct and worked. It went stale only because the production lineage later moved
+to `sync/upstream-20260713` and the setting didn't follow.
