@@ -54,6 +54,12 @@ Project `valadrien-os-server` · `prj_GQOzJ3SG1yje5ze67ILqM35qHpdx` · team `tea
    on `PATCH /v9/projects/{id}`; don't improvise one.
 2. **Adopt the setting once** — push a trivial commit to the branch, or Redeploy the latest commit
    with the Production target. Existing previews do NOT retroactively become production.
+3. **⚠️ Re-point the pinned alias.** `os.valadrien.dev` is a **manually PINNED alias** (pinned by an
+   earlier rollback). Neither `vercel --prod` nor `vercel promote` moves it, and a
+   production-target build from push-to-deploy may not either. If step 5.2 shows the domain missing
+   from the new deployment's alias array, run:
+   `vercel alias set <new-deployment-url> os.valadrien.dev --scope valdola-stacks-projects`
+   Until the alias follows, a correct production deploy is invisible on the live domain.
 
 ## 5. Verification
 
