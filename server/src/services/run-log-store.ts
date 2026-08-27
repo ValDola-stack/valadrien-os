@@ -1,7 +1,7 @@
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { type Db, heartbeatRunLogChunks } from "@valadrien-os/db";
 import { notFound } from "../errors.js";
 import { resolveValadrienOsInstanceRoot } from "../home-paths.js";
@@ -162,6 +162,8 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
 // control plane reads them back for the transcript. Both planes share the DB, so this works
 // across the filesystem split that broke the old local-file logs ("Run log not found").
 function createPostgresRunLogStore(db: Db): RunLogStore {
+  // Full materialisation. Only finalize() needs this (SHA-256 covers the whole log); the read
+  // path uses readRange so paging stays O(page) instead of O(log) per call.
   async function readAll(runId: string): Promise<string> {
     const rows = await db
       .select({ content: heartbeatRunLogChunks.content })
@@ -169,6 +171,44 @@ function createPostgresRunLogStore(db: Db): RunLogStore {
       .where(eq(heartbeatRunLogChunks.runId, runId))
       .orderBy(asc(heartbeatRunLogChunks.seq));
     return rows.map((r) => r.content).join("");
+  }
+
+  async function totalBytes(runId: string): Promise<number> {
+    const rows = await db.execute(sql`
+      SELECT COALESCE(SUM(octet_length(content)), 0)::bigint AS total
+      FROM ${heartbeatRunLogChunks}
+      WHERE run_id = ${runId}
+    `);
+    return Number((rows as unknown as Array<{ total: string | number }>)[0]?.total ?? 0);
+  }
+
+  /**
+   * Fetch only the chunks whose byte range overlaps [offset, offset+limitBytes), then slice.
+   * Byte offsets are computed in postgres with octet_length so they agree with Buffer maths.
+   * Returns the slice plus the byte offset the first returned chunk starts at.
+   */
+  async function readRange(runId: string, offset: number, limitBytes: number) {
+    const end = offset + limitBytes;
+    const rows = await db.execute(sql`
+      WITH ordered AS (
+        SELECT
+          content,
+          SUM(octet_length(content)) OVER (ORDER BY seq) AS end_byte,
+          octet_length(content) AS len
+        FROM ${heartbeatRunLogChunks}
+        WHERE run_id = ${runId}
+      )
+      SELECT content, (end_byte - len)::bigint AS start_byte
+      FROM ordered
+      WHERE end_byte > ${offset} AND (end_byte - len) < ${end}
+      ORDER BY start_byte
+    `);
+    const list = rows as unknown as Array<{ content: string; start_byte: string | number }>;
+    if (list.length === 0) return { buf: Buffer.alloc(0), firstStart: offset };
+    return {
+      buf: Buffer.from(list.map((r) => r.content).join(""), "utf8"),
+      firstStart: Number(list[0]!.start_byte),
+    };
   }
   return {
     async begin(input) {
@@ -178,9 +218,14 @@ function createPostgresRunLogStore(db: Db): RunLogStore {
     },
     async append(handle, event) {
       if (handle.store !== "postgres") return 0;
+      // company_id is a NOT NULL uuid with an FK; an empty-string fallback cannot satisfy it and
+      // would surface as an opaque cast error deep in postgres. Fail loudly at the call site.
+      if (!handle.companyId) {
+        throw new Error("Run log append requires companyId on a postgres handle");
+      }
       const persisted = `${JSON.stringify({ ts: event.ts, stream: event.stream, chunk: event.chunk })}\n`;
       await db.insert(heartbeatRunLogChunks).values({
-        companyId: handle.companyId ?? "",
+        companyId: handle.companyId,
         runId: handle.logRef,
         stream: event.stream,
         ts: new Date(event.ts),
@@ -195,12 +240,18 @@ function createPostgresRunLogStore(db: Db): RunLogStore {
     },
     async read(handle, opts) {
       if (handle.store !== "postgres") throw notFound("Run log not found");
-      const buf = Buffer.from(await readAll(handle.logRef), "utf8");
       const offset = Math.max(0, opts?.offset ?? 0);
       const limitBytes = opts?.limitBytes ?? 256_000;
-      if (offset >= buf.length) return { content: "", nextOffset: buf.length };
-      const end = Math.min(offset + limitBytes, buf.length);
-      return { content: buf.subarray(offset, end).toString("utf8"), nextOffset: end < buf.length ? end : undefined };
+      const total = await totalBytes(handle.logRef);
+      // nextOffset MUST be undefined at/after the end, matching the local_file store: paging
+      // callers (readFullRunLog) loop until it is null, so returning a number here spins forever
+      // on an empty log — the exact case begin() is designed to produce for a run with no output.
+      if (offset >= total) return { content: "", nextOffset: undefined };
+      const { buf, firstStart } = await readRange(handle.logRef, offset, limitBytes);
+      const sliceStart = offset - firstStart;
+      const end = Math.min(offset + limitBytes, total);
+      const content = buf.subarray(sliceStart, sliceStart + (end - offset)).toString("utf8");
+      return { content, nextOffset: end < total ? end : undefined };
     },
   };
 }
