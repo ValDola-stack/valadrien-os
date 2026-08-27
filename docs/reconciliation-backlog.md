@@ -15,6 +15,15 @@ Reconciliation is already running in slices (slice 1 = agent portraits read-path
 
 ## Highest-value items
 
+> **Status update 2026-08-27 — run logs are PARKED, not fixed.** Two attempts were made and
+> neither merged. The postgres port (#29, closed) contradicted `doc/spec/agent-runs.md`, which
+> makes object_store the cloud default and postgres a capped fallback. The spec-aligned rewrite
+> (#30, **draft**) reached five review rounds, each finding real bugs in the previous round's
+> fixes, including two P1s introduced by a dedicated adversarial pass. Its state machine —
+> buffering, timer, flush chain, segment numbering, manifest adoption, dirty-manifest retry,
+> finalized cache — is the problem. Recommended restart: one object per run, rewritten on flush,
+> ~4MB cap, no segment layer. See #30 for the full findings and rationale.
+
 1. **`feat/db-backed-run-logs` fixes a live, still-open bug.** Production has no run-log schema at
    all — it still uses the file/object-store path (`server/src/services/run-log-store.ts`) that
    produces **"Run log not found"** on every transcript. See `HANDOFF-run-logs-not-loading.md`:
