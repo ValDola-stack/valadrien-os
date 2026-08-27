@@ -218,6 +218,8 @@ export function createObjectStoreRunLogStore(
     lastError: unknown;
     /** Segment landed but its manifest write failed; the manifest must be retried on its own. */
     manifestDirty: boolean;
+    /** Whether the durable manifest has been reconciled into this in-memory state. */
+    adopted: boolean;
     /** Serialises uploads: a flush must never overlap another flush on the same run. */
     chain: Promise<void>;
   };
@@ -235,7 +237,7 @@ export function createObjectStoreRunLogStore(
     if (!p) {
       p = {
         chunks: [], buffered: 0, manifest: { segments: [], truncated: false },
-        hash: createHash("sha256"), total: 0, truncated: false, timer: null, lastError: null, manifestDirty: false,
+        hash: createHash("sha256"), total: 0, truncated: false, timer: null, lastError: null, manifestDirty: false, adopted: false,
         chain: Promise.resolve(),
       };
       pending.set(logRef, p);
@@ -298,6 +300,22 @@ export function createObjectStoreRunLogStore(
       p.chunks = [];
       p.buffered = 0;
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+
+      // Never assume this flush is writing the FIRST segment. In-memory state can be recreated for
+      // a run whose durable log already exists — a late append after its entry aged out of the
+      // finalized cache, for instance — and numbering from an empty manifest would write
+      // 00001.ndjson straight over the original first segment and replace index.json with a
+      // manifest listing only the new chunk, destroying a completed transcript. Reconcile against
+      // durable state once per run before numbering anything.
+      if (!p.adopted) {
+        p.adopted = true;
+        const durable = await getManifest(logRef).catch(() => null);
+        if (durable && durable.segments.length > 0) {
+          p.manifest = durable;
+          p.truncated = p.truncated || durable.truncated;
+          p.total += durable.segments.reduce((n, seg) => n + seg.bytes, 0);
+        }
+      }
 
       const body = Buffer.concat(snapshot);
       const key = `${logRef}/${String(p.manifest.segments.length + 1).padStart(5, "0")}.ndjson`;

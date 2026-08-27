@@ -234,6 +234,24 @@ describe("object-store run logs", () => {
     await expect(s2.read(h, { offset: 0, limitBytes: 4096 })).rejects.toThrow(/Run log not found/);
   });
 
+  // --- Adversarial pass: in-memory state can be recreated for an already-durable run --------
+  it("a late append after the finalized cache evicts the run must NOT destroy the transcript", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await s2.begin({ companyId: "co", agentId: "ag", runId: "victim" });
+    await s2.append(h, ev("ORIGINAL-TRANSCRIPT", 0));
+    await s2.finalize(h);
+    // Push the victim out of the bounded finalized cache so a late append recreates fresh state.
+    for (let i = 0; i < 300; i += 1) {
+      const o = await s2.begin({ companyId: "co", agentId: "ag", runId: `filler-${i}` });
+      await s2.append(o, ev("x", 0));
+      await s2.finalize(o);
+    }
+    await s2.append(h, ev("LATE-STRAGGLER", 99));
+    const seg1 = mem.objects.get("co/run-logs/ag/victim/00001.ndjson")!.toString("utf8");
+    expect(seg1, "segment 00001 must still hold the original output").toContain("ORIGINAL-TRANSCRIPT");
+    expect(await walk(s2, h, 1_000_000)).toContain("ORIGINAL-TRANSCRIPT");
+  });
+
   it("enforces the per-run size cap and marks the log truncated", async () => {
     const s = createObjectStoreRunLogStore(mem.provider, { maxBytes: 400, flushBytes: 1 });
     const h = await begin(s);
