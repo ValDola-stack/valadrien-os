@@ -1023,6 +1023,13 @@
       "when": 1783911238199,
       "tag": "0147_company_infra_managed",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1787835390615,
+      "tag": "0148_agents_portrait_url",
+      "breakpoints": true
     }
   ]
 }
