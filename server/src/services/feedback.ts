@@ -45,7 +45,7 @@ import {
   sanitizeFeedbackValue,
   sha256Digest,
 } from "./feedback-redaction.js";
-import { getRunLogStore } from "./run-log-store.js";
+import { getRunLogStore, type RunLogStoreType } from "./run-log-store.js";
 
 const FEEDBACK_SCHEMA_VERSION = "valadrien-os-feedback-envelope-v2";
 const FEEDBACK_BUNDLE_VERSION = "valadrien-os-feedback-bundle-v2";
@@ -315,17 +315,17 @@ async function findMatchingFile(
   return search(rootDir, 0);
 }
 
-async function readFullRunLog(run: {
+async function readFullRunLog(db: Db, run: {
   logStore: string | null;
   logRef: string | null;
 }) {
-  if (run.logStore !== "local_file" || !run.logRef) return null;
-  const store = getRunLogStore();
+  if ((run.logStore !== "local_file" && run.logStore !== "postgres") || !run.logRef) return null;
+  const store = getRunLogStore(db);
   let offset = 0;
   let combined = "";
 
   while (true) {
-    const result = await store.read({ store: "local_file", logRef: run.logRef }, {
+    const result = await store.read({ store: run.logStore as RunLogStoreType, logRef: run.logRef }, {
       offset,
       limitBytes: 512_000,
     }).catch(() => null);
@@ -1511,7 +1511,7 @@ async function buildFeedbackTraceBundleFromRow(
         .from(heartbeatRunEvents)
         .where(eq(heartbeatRunEvents.runId, run.id))
         .orderBy(asc(heartbeatRunEvents.seq));
-      const logText = await readFullRunLog(run);
+      const logText = await readFullRunLog(db, run);
       const logEntries = parseRunLogEntries(logText);
       const stdoutText = logEntries
         .filter((entry) => entry.stream === "stdout")

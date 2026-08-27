@@ -65,7 +65,7 @@ import { conflict, HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "./live-events.js";
 import { normalizeResponsibleUserDenialCode } from "./responsible-user-denial-run-outcomes.js";
-import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
+import { getRunLogStore, type RunLogHandle, type RunLogStoreType } from "./run-log-store.js";
 import { getServerAdapter, listAdapterModelProfiles, runningProcesses } from "../adapters/index.js";
 import type {
   AdapterExecutionResult,
@@ -5064,7 +5064,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     return override.allowed ? override.cutoff : null;
   };
 
-  const runLogStore = getRunLogStore();
+  const runLogStore = getRunLogStore(db);
   const secretsSvc = secretService(db);
   const companySkills = companySkillService(db);
   const issuesSvc = issueService(db);
@@ -15986,7 +15986,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
       const result = await runLogStore.read(
         {
-          store: run.logStore as "local_file",
+          store: run.logStore as RunLogStoreType,
           logRef: run.logRef,
         },
         opts,
