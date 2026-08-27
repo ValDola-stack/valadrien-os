@@ -196,6 +196,44 @@ describe("object-store run logs", () => {
     expect(first.bytes).toBeGreaterThan(0);
   });
 
+  // --- Codex round 4, P1: a late append must not destroy a completed transcript ----------
+  it("DROPS appends after finalize instead of overwriting segment 00001", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2);
+    await s2.append(h, ev("original-output", 0));
+    const summary = await s2.finalize(h);
+    // A late fire-and-forget callback arriving after the run is sealed.
+    const written = await s2.append(h, ev("late-straggler", 99));
+    expect(written, "late append must be dropped").toBe(0);
+    const whole = await walk(s2, h, 1_000_000);
+    expect(whole, "the completed transcript must survive").toContain("original-output");
+    expect(whole, "the late chunk must not replace it").not.toContain("late-straggler");
+    expect((await s2.finalize(h)).bytes).toBe(summary.bytes);
+  });
+
+  // --- Codex round 4, P2: a dirty manifest must be retried by an empty flush -------------
+  it("RETRIES a failed manifest write even when no new chunks are buffered", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10_000 });
+    const h = await begin(s2);
+    // Segment PUT succeeds, manifest PUT fails once — the bytes are durable but unlisted.
+    mem.failPut(/index\.json$/, new Error("ServiceUnavailable"), 1);
+    await expect(s2.append(h, ev("durable-output", 0))).rejects.toThrow(/ServiceUnavailable/);
+    // Storage has recovered; finalize must repair the manifest, not rethrow the stale error.
+    const summary = await s2.finalize(h);
+    expect(summary.bytes).toBeGreaterThan(0);
+    expect(await walk(s2, h, 1_000_000)).toContain("durable-output");
+  });
+
+  // --- Codex round 4, P2: a missing manifest is a fault, not an empty run ----------------
+  it("REPORTS a missing manifest rather than reading back a blank transcript", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2);
+    await s2.append(h, ev("output", 0));
+    // Simulate a deleted object / wrong bucket-prefix.
+    for (const k of [...mem.objects.keys()]) if (k.endsWith("index.json")) mem.objects.delete(k);
+    await expect(s2.read(h, { offset: 0, limitBytes: 4096 })).rejects.toThrow(/Run log not found/);
+  });
+
   it("enforces the per-run size cap and marks the log truncated", async () => {
     const s = createObjectStoreRunLogStore(mem.provider, { maxBytes: 400, flushBytes: 1 });
     const h = await begin(s);

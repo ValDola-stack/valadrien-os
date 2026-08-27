@@ -216,6 +216,8 @@ export function createObjectStoreRunLogStore(
     timer: NodeJS.Timeout | null;
     /** Last flush failure, surfaced by finalize() so a short transcript is never reported clean. */
     lastError: unknown;
+    /** Segment landed but its manifest write failed; the manifest must be retried on its own. */
+    manifestDirty: boolean;
     /** Serialises uploads: a flush must never overlap another flush on the same run. */
     chain: Promise<void>;
   };
@@ -233,7 +235,7 @@ export function createObjectStoreRunLogStore(
     if (!p) {
       p = {
         chunks: [], buffered: 0, manifest: { segments: [], truncated: false },
-        hash: createHash("sha256"), total: 0, truncated: false, timer: null, lastError: null,
+        hash: createHash("sha256"), total: 0, truncated: false, timer: null, lastError: null, manifestDirty: false,
         chain: Promise.resolve(),
       };
       pending.set(logRef, p);
@@ -254,15 +256,16 @@ export function createObjectStoreRunLogStore(
     return Buffer.concat(parts);
   }
 
-  async function getManifest(logRef: string): Promise<Manifest | null> {
+  async function getManifest(logRef: string): Promise<Manifest> {
     let result;
     try {
       result = await provider.getObject({ objectKey: manifestKey(logRef) });
     } catch (error) {
-      // A genuinely absent manifest means "this run wrote nothing" and reads back as an empty
-      // transcript. Any OTHER failure (auth, permission, timeout, 5xx) must NOT be flattened into
-      // an empty log — that renders a storage outage as a legitimately blank transcript.
-      if (isObjectNotFound(error)) return null;
+      // begin() writes an empty manifest for EVERY object-store run before the handle is
+      // persisted, so a run that emitted nothing still has one. A missing manifest therefore means
+      // the object was deleted or the bucket/prefix is misconfigured — a real fault. Treating it
+      // as "no output" would reproduce the silent-empty failure mode this store exists to remove.
+      if (isObjectNotFound(error)) throw notFound("Run log not found");
       throw error;
     }
     try {
@@ -280,7 +283,18 @@ export function createObjectStoreRunLogStore(
       // the upload accumulates into the next flush instead of being cleared by this one.
       const snapshot = p.chunks;
       const snapshotBytes = p.buffered;
-      if (snapshot.length === 0) return;
+      if (snapshot.length === 0) {
+        // Nothing new to upload, but a previous flush may have landed its segment and then failed
+        // to write the manifest. Returning early there left the manifest permanently behind and
+        // finalize() rethrowing a stale error turned an otherwise successful quiet run into a
+        // failed one.
+        if (p.manifestDirty) {
+          await putManifest(logRef, p.manifest);
+          p.manifestDirty = false;
+          p.lastError = null;
+        }
+        return;
+      }
       p.chunks = [];
       p.buffered = 0;
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
@@ -302,8 +316,10 @@ export function createObjectStoreRunLogStore(
       // (harmless) rather than a manifest pointing at an object that does not exist.
       p.manifest.segments.push({ key, bytes: body.length });
       p.manifest.truncated = p.truncated;
+      p.manifestDirty = true;
       try {
         await putManifest(logRef, p.manifest);
+        p.manifestDirty = false;
       } catch (error) {
         // The bytes ARE durable in the segment; only the manifest write failed. Do not requeue
         // (that would upload the same bytes again as a second segment). The in-memory manifest
@@ -346,6 +362,13 @@ export function createObjectStoreRunLogStore(
 
     async append(handle, event) {
       if (handle.store !== "object_store") return 0;
+      // A finalized run is sealed. Recreating pending state here would start a fresh manifest,
+      // so the next flush would write 00001.ndjson OVER the original first segment and replace
+      // index.json with a manifest listing only the late chunk — destroying a completed
+      // transcript. Late callbacks (e.g. an adapter's unawaited socket-error logger firing as the
+      // socket closes) are dropped rather than thrown, because throwing into a fire-and-forget
+      // callback surfaces as an unhandled rejection in the worker.
+      if (finalized.has(handle.logRef)) return 0;
       const p = state(handle.logRef);
       if (p.truncated) return 0;
 
@@ -405,7 +428,7 @@ export function createObjectStoreRunLogStore(
       const offset = Math.max(0, opts?.offset ?? 0);
       const limitBytes = opts?.limitBytes ?? 256_000;
       const manifest = await getManifest(handle.logRef);
-      const segments = manifest?.segments ?? [];
+      const segments = manifest.segments;
       const total = segments.reduce((n, seg) => n + seg.bytes, 0);
       // nextOffset MUST be undefined at/after the end, matching the local_file store: paging
       // callers (readFullRunLog) loop until it is null, so a number here spins forever on an
