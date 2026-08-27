@@ -45,7 +45,7 @@ import {
   sanitizeFeedbackValue,
   sha256Digest,
 } from "./feedback-redaction.js";
-import { getRunLogStore } from "./run-log-store.js";
+import { getRunLogStore, isRunLogStoreType, type RunLogStoreType } from "./run-log-store.js";
 
 const FEEDBACK_SCHEMA_VERSION = "valadrien-os-feedback-envelope-v2";
 const FEEDBACK_BUNDLE_VERSION = "valadrien-os-feedback-bundle-v2";
@@ -319,13 +319,13 @@ async function readFullRunLog(run: {
   logStore: string | null;
   logRef: string | null;
 }) {
-  if (run.logStore !== "local_file" || !run.logRef) return null;
+  if (!isRunLogStoreType(run.logStore) || !run.logRef) return null;
   const store = getRunLogStore();
   let offset = 0;
   let combined = "";
 
   while (true) {
-    const result = await store.read({ store: "local_file", logRef: run.logRef }, {
+    const result = await store.read({ store: run.logStore as RunLogStoreType, logRef: run.logRef }, {
       offset,
       limitBytes: 512_000,
     }).catch(() => null);
