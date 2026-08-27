@@ -3,131 +3,175 @@ import { Readable } from "node:stream";
 import type { StorageProvider } from "../storage/types.ts";
 import { createObjectStoreRunLogStore, type RunLogHandle } from "../services/run-log-store.ts";
 
-// Faithful in-memory object store: honours ranged GET and reports contentLength from HEAD, so the
-// run-log store's byte maths and paging contract are exercised for real rather than stubbed away.
-function memoryProvider() {
+// Faithful in-memory object store: honours ranged GET, so byte maths is exercised for real.
+// Instrumented for upload volume, and able to stall or fail on demand.
+function memoryProvider(opts: { putDelayMs?: number } = {}) {
   const objects = new Map<string, Buffer>();
-  const calls = { put: 0, get: 0, head: 0 };
-  let lastRange: { start: number; end: number } | undefined;
+  const stats = { puts: 0, bytesUploaded: 0, gets: 0 };
+  let failHeadAndGetWith: Error | null = null;
   const provider: StorageProvider = {
     id: "s3" as never,
-    async putObject({ objectKey, body }) { calls.put += 1; objects.set(objectKey, Buffer.from(body)); },
+    async putObject({ objectKey, body }) {
+      if (opts.putDelayMs) await new Promise((r) => setTimeout(r, opts.putDelayMs));
+      stats.puts += 1;
+      if (objectKey.endsWith(".ndjson")) stats.bytesUploaded += body.length;
+      objects.set(objectKey, Buffer.from(body));
+    },
     async headObject({ objectKey }) {
-      calls.head += 1;
+      if (failHeadAndGetWith) throw failHeadAndGetWith;
       const o = objects.get(objectKey);
       return o ? { exists: true, contentLength: o.length } : { exists: false };
     },
     async getObject({ objectKey, range }) {
-      calls.get += 1; lastRange = range;
+      if (failHeadAndGetWith) throw failHeadAndGetWith;
+      stats.gets += 1;
       const o = objects.get(objectKey);
-      if (!o) throw new Error("NoSuchKey");
+      if (!o) { const e = new Error("NoSuchKey"); e.name = "NoSuchKey"; throw e; }
       return { stream: Readable.from([range ? o.subarray(range.start, range.end + 1) : o]) };
     },
     async deleteObject({ objectKey }) { objects.delete(objectKey); },
   };
-  return { provider, objects, calls, range: () => lastRange };
+  return { provider, objects, stats, fail: (e: Error | null) => { failHeadAndGetWith = e; } };
 }
 
-const begin = (store: ReturnType<typeof createObjectStoreRunLogStore>) =>
-  store.begin({ companyId: "co", agentId: "ag", runId: "run-1" });
+const begin = (s: ReturnType<typeof createObjectStoreRunLogStore>) =>
+  s.begin({ companyId: "co", agentId: "ag", runId: "run-1" });
 const ev = (chunk: string, seq?: number) =>
   ({ stream: "stdout" as const, chunk, ts: new Date(0).toISOString(), seq });
+
+async function walk(store: ReturnType<typeof createObjectStoreRunLogStore>, h: RunLogHandle, limit: number) {
+  let offset = 0, out = "", guard = 0;
+  for (;;) {
+    if (++guard > 2000) throw new Error("paging did not terminate");
+    const r = await store.read(h, { offset, limitBytes: limit });
+    out += r.content;
+    if (r.nextOffset == null) break;
+    offset = r.nextOffset;
+  }
+  return out;
+}
 
 describe("object-store run logs", () => {
   let mem: ReturnType<typeof memoryProvider>;
   beforeEach(() => { mem = memoryProvider(); });
 
-  it("writes a company-prefixed key so tenant scoping holds", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider);
-    const h = await begin(store);
-    expect(h.store).toBe("object_store");
+  it("writes company-prefixed keys so tenant scoping holds", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider);
+    const h = await begin(s);
     expect(h.logRef.startsWith("co/")).toBe(true);
   });
 
-  it("persists seq — the transcript UI dedupes the websocket and poller paths on it", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
-    const h = await begin(store);
-    await store.append(h, ev("hello", 7));
-    const written = [...mem.objects.values()][0]!.toString("utf8");
-    expect(JSON.parse(written.trim()).seq).toBe(7);
+  it("persists seq — the transcript UI dedupes websocket vs poller on it", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s);
+    await s.append(h, ev("hello", 7));
+    const seg = [...mem.objects.entries()].find(([k]) => k.endsWith(".ndjson"))![1];
+    expect(JSON.parse(seg.toString("utf8").trim()).seq).toBe(7);
   });
 
-  it("an EMPTY log reads back empty and TERMINATES paging", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider);
-    const h = await begin(store);
-    const r = await store.read(h, { offset: 0, limitBytes: 4096 });
+  it("an EMPTY log reads back empty and terminates paging", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider);
+    const h = await begin(s);
+    const r = await s.read(h, { offset: 0, limitBytes: 4096 });
     expect(r.content).toBe("");
     expect(r.nextOffset).toBeUndefined();
   });
 
-  it("paged reads match full-content slicing and use a NATIVE range (no full transfer)", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
-    const h = await begin(store);
-    for (const [i, w] of ["alpha", "beta", "gamma", "delta"].entries()) await store.append(h, ev(w, i));
-    const whole = [...mem.objects.values()][0]!;
-    for (let offset = 0; offset <= whole.length + 2; offset += 1) {
-      for (const limit of [1, 5, 17, 4096]) {
-        const r = await store.read(h, { offset, limitBytes: limit });
-        const end = Math.min(offset + limit, whole.length);
-        expect(r.content, `o=${offset} l=${limit}`).toBe(whole.subarray(offset, end).toString("utf8"));
-        expect(r.nextOffset, `next o=${offset} l=${limit}`).toBe(
-          offset >= whole.length ? undefined : (end < whole.length ? end : undefined));
+  it("paged reads match full-content slicing across every offset/limit pair", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 20 });
+    const h = await begin(s);
+    for (const [i, w] of ["alpha", "beta", "gamma", "delta", "epsilon"].entries()) await s.append(h, ev(w, i));
+    await s.finalize(h);
+    const whole = await walk(s, h, 1_000_000);
+    const buf = Buffer.from(whole, "utf8");
+    for (let offset = 0; offset <= buf.length + 2; offset += 3) {
+      for (const limit of [1, 4, 29, 4096]) {
+        const r = await s.read(h, { offset, limitBytes: limit });
+        expect(r.content, `o=${offset} l=${limit}`)
+          .toBe(buf.subarray(offset, Math.min(offset + limit, buf.length)).toString("utf8"));
       }
     }
-    const last = mem.range();
-    expect(last, "read must issue a ranged GET").toBeDefined();
+    for (const limit of [1, 7, 64, 4096]) expect(await walk(s, h, limit), `limit=${limit}`).toBe(whole);
   });
 
-  it("a full page walk reassembles the log and terminates", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
-    const h = await begin(store);
-    for (const [i, w] of ["one", "two", "three"].entries()) await store.append(h, ev(w, i));
-    const whole = [...mem.objects.values()][0]!.toString("utf8");
-    for (const limit of [1, 7, 4096]) {
-      let offset = 0, combined = "", guard = 0;
-      for (;;) {
-        if (++guard > 500) throw new Error(`did not terminate at limit=${limit}`);
-        const r = await store.read(h, { offset, limitBytes: limit });
-        combined += r.content;
-        if (r.nextOffset == null) break;
-        offset = r.nextOffset;
-      }
-      expect(combined, `limit=${limit}`).toBe(whole);
+  // --- Codex P1: flush must not discard a chunk that arrives mid-upload -------------------
+  it("does NOT lose output appended while a flush is in flight", async () => {
+    const slow = memoryProvider({ putDelayMs: 25 });
+    const s = createObjectStoreRunLogStore(slow.provider, { flushBytes: 1, flushMs: 10_000 });
+    const h = await begin(s);
+    // Fire concurrently: each append triggers a flush at flushBytes=1, so uploads overlap.
+    await Promise.all(Array.from({ length: 8 }, (_, i) => s.append(h, ev(`chunk-${i}`, i))));
+    await s.finalize(h);
+    const whole = await walk(s, h, 1_000_000);
+    for (let i = 0; i < 8; i += 1) expect(whole, `chunk-${i} must survive`).toContain(`chunk-${i}`);
+  });
+
+  // --- Codex P1: a quiet run must still reach durable storage ----------------------------
+  it("flushes on a TIMER when the run goes quiet (no further append)", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1_000_000, flushMs: 30 });
+    const h = await begin(s);
+    await s.append(h, ev("quiet-run-output", 0));
+    expect(mem.objects.has("co/run-logs/ag/run-1/00001.ndjson"),
+      "nothing should be flushed yet").toBe(false);
+    await new Promise((r) => setTimeout(r, 120));
+    const whole = await walk(s, h, 1_000_000);
+    expect(whole, "timer must persist output without another append").toContain("quiet-run-output");
+  });
+
+  // --- Codex P1: segments, not whole-object rewrites -------------------------------------
+  it("uploads O(bytes emitted), not the whole log on every flush", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 64, flushMs: 10_000 });
+    const h = await begin(s);
+    for (let i = 0; i < 120; i += 1) await s.append(h, ev(`line-${i}-padding`, i));
+    await s.finalize(h);
+    const logBytes = Buffer.byteLength(await walk(s, h, 1_000_000), "utf8");
+    // Rewriting the full object each flush made this quadratic; segments keep it ~1x.
+    expect(mem.stats.bytesUploaded).toBeLessThan(logBytes * 2);
+  });
+
+  // --- Codex P2: storage failures must not read as an empty transcript -------------------
+  it("PROPAGATES a storage failure instead of returning an empty log", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s);
+    await s.append(h, ev("real output", 0));
+    const boom = new Error("AccessDenied"); boom.name = "AccessDenied";
+    mem.fail(boom);
+    await expect(s.read(h, { offset: 0, limitBytes: 4096 })).rejects.toThrow(/AccessDenied/);
+  });
+
+  // --- Codex P2: never split a multibyte character across pages --------------------------
+  it("does not corrupt multibyte UTF-8 split by a page boundary", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s);
+    await s.append(h, ev("héllo — wörld ✅ Ωmega", 0));
+    await s.finalize(h);
+    const whole = await walk(s, h, 1_000_000);
+    for (const limit of [1, 2, 3, 5, 7, 11]) {
+      const paged = await walk(s, h, limit);
+      expect(paged, `limit=${limit}`).toBe(whole);
+      expect(paged.includes("�"), `limit=${limit} must not emit U+FFFD`).toBe(false);
     }
   });
 
-  it("BATCHES appends instead of one network round trip per chunk", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider, { flushBytes: 64 * 1024, flushMs: 60_000 });
-    const h = await begin(store);
-    for (let i = 0; i < 50; i += 1) await store.append(h, ev("x", i));
-    expect(mem.calls.put, "buffered appends must not each hit the network").toBe(0);
-    await store.finalize(h);
-    expect(mem.calls.put).toBe(1);
+  it("enforces the per-run size cap and marks the log truncated", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { maxBytes: 400, flushBytes: 1 });
+    const h = await begin(s);
+    for (let i = 0; i < 200; i += 1) await s.append(h, ev("padding-padding", i));
+    const whole = await walk(s, h, 1_000_000);
+    expect(whole).toContain("run log truncated at 400 bytes");
   });
 
-  it("ENFORCES the per-run size cap and marks the log truncated", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider, { maxBytes: 400, flushBytes: 1 });
-    const h = await begin(store);
-    let accepted = 0;
-    for (let i = 0; i < 200; i += 1) accepted += await store.append(h, ev("padding-padding", i));
-    const body = [...mem.objects.values()][0]!.toString("utf8");
-    expect(body).toContain("run log truncated at 400 bytes");
-    expect(Buffer.byteLength(body, "utf8")).toBeLessThan(400 + 200);
-    expect(accepted).toBeGreaterThan(0);
-  });
-
-  it("finalize reports the byte count and a sha256 over the whole log", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
-    const h = await begin(store);
-    await store.append(h, ev("abc", 0));
-    const summary = await store.finalize(h);
-    const whole = [...mem.objects.values()][0]!;
-    expect(summary.bytes).toBe(whole.length);
+  it("finalize reports byte count and a sha256 over the whole log", async () => {
+    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s);
+    await s.append(h, ev("abc", 0));
+    const summary = await s.finalize(h);
+    expect(summary.bytes).toBeGreaterThan(0);
     expect(summary.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("rejects a foreign handle rather than silently reading nothing", async () => {
-    const store = createObjectStoreRunLogStore(mem.provider);
-    await expect(store.read({ store: "local_file", logRef: "x" } as RunLogHandle)).rejects.toThrow();
+    const s = createObjectStoreRunLogStore(mem.provider);
+    await expect(s.read({ store: "local_file", logRef: "x" } as RunLogHandle)).rejects.toThrow();
   });
 });

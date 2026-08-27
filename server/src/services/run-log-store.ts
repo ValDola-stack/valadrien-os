@@ -169,26 +169,32 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
   };
 }
 
-/**
- * Object-store run logs. Per `doc/spec/agent-runs.md` this is the cloud/serverless default: the
- * Railway worker writes to the shared object store and the Vercel control plane reads it back,
- * which is what the old local-file logs could not do across the two filesystems.
- *
- * Object stores cannot append, so a run buffers in memory and rewrites its object on a size/time
- * threshold rather than once per chunk. That keeps `append()` off the network for the common case
- * — it is awaited inside the adapter's stdout pump, so a per-chunk round trip would stall the
- * child process — at the cost of the reader trailing the writer by at most one flush interval.
- * Live tailing is served by the websocket path, which carries `seq`; this is the durable copy.
- */
 export interface ObjectStoreRunLogOptions {
   /** Per-run byte cap. Defaults to OBJECT_STORE_RUN_LOG_MAX_BYTES. */
   maxBytes?: number;
   /** Flush once this many bytes are buffered. */
   flushBytes?: number;
-  /** Flush once the oldest unflushed byte is this old (ms). */
+  /** Flush this long after the first unflushed byte, even if the run has gone quiet (ms). */
   flushMs?: number;
 }
 
+/**
+ * Object-store run logs. Per `doc/spec/agent-runs.md` this is the cloud/serverless default: the
+ * Railway worker writes to the shared object store and the Vercel control plane reads it back,
+ * which is what the old local-file logs could not do across the two filesystems.
+ *
+ * Object stores cannot append, so a run is stored as IMMUTABLE SEGMENTS plus a small manifest:
+ *
+ *   <prefix>/index.json      { segments: [{ key, bytes }], truncated }
+ *   <prefix>/00001.ndjson    one flush worth of complete NDJSON lines
+ *   <prefix>/00002.ndjson    ...
+ *
+ * Each flush uploads only the newly buffered bytes and rewrites the (tiny) manifest, so write
+ * traffic is O(bytes emitted) rather than O(bytes²) — replacing one growing blob meant a run at
+ * the 32MB cap re-uploaded roughly 8GiB across ~512 PUTs, each awaited by the adapter's output
+ * pump. Reads consult the manifest for sizes (no scan) and issue ranged GETs against only the
+ * segments overlapping the requested window.
+ */
 export function createObjectStoreRunLogStore(
   provider: StorageProvider,
   options: ObjectStoreRunLogOptions = {},
@@ -196,31 +202,40 @@ export function createObjectStoreRunLogStore(
   const maxBytes = options.maxBytes ?? OBJECT_STORE_RUN_LOG_MAX_BYTES;
   const flushBytes = options.flushBytes ?? OBJECT_STORE_FLUSH_BYTES;
   const flushMs = options.flushMs ?? OBJECT_STORE_FLUSH_MS;
-  type Pending = { chunks: Buffer[]; flushed: Buffer; oldestUnflushedAt: number; truncated: boolean };
+
+  type Segment = { key: string; bytes: number };
+  type Manifest = { segments: Segment[]; truncated: boolean };
+  type Pending = {
+    chunks: Buffer[];
+    buffered: number;
+    manifest: Manifest;
+    hash: ReturnType<typeof createHash>;
+    total: number;
+    truncated: boolean;
+    timer: NodeJS.Timeout | null;
+    /** Serialises uploads: a flush must never overlap another flush on the same run. */
+    chain: Promise<void>;
+  };
   const pending = new Map<string, Pending>();
 
   function state(logRef: string): Pending {
     let p = pending.get(logRef);
     if (!p) {
-      p = { chunks: [], flushed: Buffer.alloc(0), oldestUnflushedAt: 0, truncated: false };
+      p = {
+        chunks: [], buffered: 0, manifest: { segments: [], truncated: false },
+        hash: createHash("sha256"), total: 0, truncated: false, timer: null,
+        chain: Promise.resolve(),
+      };
       pending.set(logRef, p);
     }
     return p;
   }
 
-  async function flush(logRef: string) {
-    const p = state(logRef);
-    if (p.chunks.length === 0) return;
-    const body = Buffer.concat([p.flushed, ...p.chunks]);
-    await provider.putObject({
-      objectKey: logRef,
-      body,
-      contentType: "application/x-ndjson",
-      contentLength: body.length,
-    });
-    p.flushed = body;
-    p.chunks = [];
-    p.oldestUnflushedAt = 0;
+  const manifestKey = (logRef: string) => `${logRef}/index.json`;
+
+  async function putManifest(logRef: string, manifest: Manifest) {
+    const body = Buffer.from(JSON.stringify(manifest), "utf8");
+    await provider.putObject({ objectKey: manifestKey(logRef), body, contentType: "application/json", contentLength: body.length });
   }
 
   async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
@@ -229,11 +244,60 @@ export function createObjectStoreRunLogStore(
     return Buffer.concat(parts);
   }
 
-  async function totalBytes(logRef: string): Promise<number> {
-    const head = await provider.headObject({ objectKey: logRef }).catch(() => null);
-    // A run that produced no output never gets an object written; that reads back as an empty
-    // transcript, not a 404 — the same contract begin() implies for the other stores.
-    return head?.exists ? head.contentLength ?? 0 : 0;
+  async function getManifest(logRef: string): Promise<Manifest | null> {
+    let result;
+    try {
+      result = await provider.getObject({ objectKey: manifestKey(logRef) });
+    } catch (error) {
+      // A genuinely absent manifest means "this run wrote nothing" and reads back as an empty
+      // transcript. Any OTHER failure (auth, permission, timeout, 5xx) must NOT be flattened into
+      // an empty log — that renders a storage outage as a legitimately blank transcript.
+      if (isObjectNotFound(error)) return null;
+      throw error;
+    }
+    try {
+      return JSON.parse((await drain(result.stream)).toString("utf8")) as Manifest;
+    } catch {
+      throw new Error(`Run log manifest is unreadable for ${logRef}`);
+    }
+  }
+
+  /** Enqueue a flush on the run's serial chain and wait for it. */
+  function flush(logRef: string): Promise<void> {
+    const p = state(logRef);
+    const next = p.chain.then(async () => {
+      // Detach the exact snapshot being uploaded BEFORE awaiting, so an append that lands during
+      // the upload accumulates into the next flush instead of being cleared by this one.
+      const snapshot = p.chunks;
+      const bytes = p.buffered;
+      if (snapshot.length === 0) return;
+      p.chunks = [];
+      p.buffered = 0;
+      if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+
+      const body = Buffer.concat(snapshot);
+      const key = `${logRef}/${String(p.manifest.segments.length + 1).padStart(5, "0")}.ndjson`;
+      await provider.putObject({ objectKey: key, body, contentType: "application/x-ndjson", contentLength: body.length });
+      // Segment first, then manifest: a crash between the two leaves an unreferenced segment
+      // (harmless) rather than a manifest pointing at an object that does not exist.
+      p.manifest.segments.push({ key, bytes: body.length });
+      p.manifest.truncated = p.truncated;
+      await putManifest(logRef, p.manifest);
+      void bytes;
+    });
+    p.chain = next.catch(() => undefined);
+    return next;
+  }
+
+  function armTimer(logRef: string) {
+    const p = state(logRef);
+    if (p.timer) return;
+    // A run that emits a little and then goes quiet must still reach durable storage. Checking the
+    // age only on the NEXT append meant such a run stayed in process memory until finalize — and
+    // vanished entirely if the worker hung or exited, which is the data-loss case this store exists
+    // to remove.
+    p.timer = setTimeout(() => { void flush(logRef); }, flushMs);
+    p.timer.unref?.();
   }
 
   return {
@@ -241,8 +305,11 @@ export function createObjectStoreRunLogStore(
       const [companyId, agentId] = safeSegments(input.companyId, input.agentId);
       const runId = safeSegments(input.runId)[0]!;
       // Keys must be company-prefixed to satisfy the storage layer's tenant scoping.
-      const logRef = `${companyId}/run-logs/${agentId}/${runId}.ndjson`;
+      const logRef = `${companyId}/run-logs/${agentId}/${runId}`;
       pending.delete(logRef);
+      // Write an empty manifest up front so a run that produces no output reads back as an empty
+      // transcript rather than being indistinguishable from a storage failure.
+      await putManifest(logRef, { segments: [], truncated: false });
       return { store: "object_store", logRef };
     },
 
@@ -261,72 +328,130 @@ export function createObjectStoreRunLogStore(
       });
       const persisted = Buffer.from(`${line}\n`, "utf8");
 
-      const buffered = p.chunks.reduce((n, c) => n + c.length, 0);
-      if (p.flushed.length + buffered + persisted.length > maxBytes) {
+      if (p.total + persisted.length > maxBytes) {
         p.truncated = true;
-        p.chunks.push(Buffer.from(`${JSON.stringify({
-          ts: event.ts,
-          stream: "system",
+        const marker = Buffer.from(`${JSON.stringify({
+          ts: event.ts, stream: "system",
           chunk: `[run log truncated at ${maxBytes} bytes]`,
-        })}\n`, "utf8"));
+        })}\n`, "utf8");
+        p.chunks.push(marker);
+        p.buffered += marker.length;
+        p.total += marker.length;
+        p.hash.update(marker);
         await flush(handle.logRef);
         return 0;
       }
 
       p.chunks.push(persisted);
-      if (p.oldestUnflushedAt === 0) p.oldestUnflushedAt = Date.now();
-      const nowBuffered = buffered + persisted.length;
-      if (nowBuffered >= flushBytes || Date.now() - p.oldestUnflushedAt >= flushMs) {
-        await flush(handle.logRef);
-      }
+      p.buffered += persisted.length;
+      p.total += persisted.length;
+      p.hash.update(persisted);
+      if (p.buffered >= flushBytes) await flush(handle.logRef);
+      else armTimer(handle.logRef);
       return persisted.length;
     },
 
     async finalize(handle) {
       if (handle.store !== "object_store") return { bytes: 0, compressed: false };
-      await flush(handle.logRef);
       const p = state(handle.logRef);
-      const body = p.flushed;
+      if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+      await flush(handle.logRef);
+      const summary = { bytes: p.total, sha256: p.hash.copy().digest("hex"), compressed: false };
       pending.delete(handle.logRef);
-      return { bytes: body.length, sha256: createHash("sha256").update(body).digest("hex"), compressed: false };
+      return summary;
     },
 
     async read(handle, opts) {
       if (handle.store !== "object_store") throw notFound("Run log not found");
       const offset = Math.max(0, opts?.offset ?? 0);
       const limitBytes = opts?.limitBytes ?? 256_000;
-      // headObject is O(1) — no scan of the log to learn its size.
-      const total = await totalBytes(handle.logRef);
+      const manifest = await getManifest(handle.logRef);
+      const segments = manifest?.segments ?? [];
+      const total = segments.reduce((n, seg) => n + seg.bytes, 0);
       // nextOffset MUST be undefined at/after the end, matching the local_file store: paging
       // callers (readFullRunLog) loop until it is null, so a number here spins forever on an
       // empty log — exactly what a run with no output produces.
       if (offset >= total) return { content: "", nextOffset: undefined };
+
       const end = Math.min(offset + limitBytes, total);
-      // Native ranged GET: transfers only the requested window.
-      const result = await provider.getObject({ objectKey: handle.logRef, range: { start: offset, end: end - 1 } });
-      const buf = await drain(result.stream);
-      return { content: buf.toString("utf8"), nextOffset: end < total ? end : undefined };
+      // Over-fetch by up to 3 bytes so a page boundary landing inside a multibyte character can be
+      // advanced to the next code-point boundary. Decoding a split character independently would
+      // emit U+FFFD on both sides, and the caller — advancing by byte offset — never recombines
+      // them, permanently corrupting that output.
+      const fetchEnd = Math.min(end + 3, total);
+      const parts: Buffer[] = [];
+      let cursor = 0;
+      for (const seg of segments) {
+        const segStart = cursor;
+        const segEnd = cursor + seg.bytes;
+        cursor = segEnd;
+        if (segEnd <= offset || segStart >= fetchEnd) continue;
+        const from = Math.max(offset, segStart) - segStart;
+        const to = Math.min(fetchEnd, segEnd) - segStart;
+        const result = await provider.getObject({ objectKey: seg.key, range: { start: from, end: to - 1 } });
+        parts.push(await drain(result.stream));
+      }
+      const buf = Buffer.concat(parts);
+      const consumed = utf8BoundaryAtOrAfter(buf, end - offset);
+      const nextOffset = offset + consumed < total ? offset + consumed : undefined;
+      return { content: buf.subarray(0, consumed).toString("utf8"), nextOffset };
     },
   };
+}
+
+/**
+ * Byte length to consume so a page ends on a complete UTF-8 code point: the smallest boundary at
+ * or after `want`. If `want` lands mid-character the bytes there are continuation bytes (10xxxxxx),
+ * so walking forward past them reaches the next lead byte. A page may therefore exceed the
+ * requested limit by up to 3 bytes, which guarantees forward progress even at limitBytes=1.
+ */
+function utf8BoundaryAtOrAfter(buf: Buffer, want: number): number {
+  if (want >= buf.length) return buf.length;
+  let i = Math.max(0, want);
+  while (i < buf.length && (buf[i]! & 0xc0) === 0x80) i += 1;
+  return i === 0 ? buf.length : i;
+}
+
+/** True when a storage error means "no such object" rather than a transport/permission failure. */
+function isObjectNotFound(error: unknown): boolean {
+  const code = (error as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } } | null);
+  if (!code) return false;
+  if (code.$metadata?.httpStatusCode === 404) return true;
+  return code.name === "NoSuchKey" || code.name === "NotFound" || code.Code === "NoSuchKey";
 }
 
 let cachedStore: RunLogStore | null = null;
 
 /**
  * Dispatcher. `doc/spec/agent-runs.md` §6.3: local_file is the dev/local default and object_store
- * is the cloud/serverless default. We follow the instance's configured storage provider — a
- * local_disk instance keeps writing files; anything else (S3/R2/GCS) gets object-store run logs,
- * which is the only backend both the worker and the control plane can reach.
+ * is the cloud/serverless default.
+ *
+ * Crucially, `begin()` picks the backend from configuration but every OTHER operation routes on
+ * the handle's own `store`. An instance that switches to S3 keeps historical `local_file` runs
+ * readable — routing reads by current config would send every pre-existing run to the object-store
+ * reader, which rejects them even though the file is still sitting on disk.
  */
-export function getRunLogStore() {
+export function getRunLogStore(): RunLogStore {
   if (cachedStore) return cachedStore;
   const config = loadConfig();
-  if (config.storageProvider === "local_disk") {
-    const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolveValadrienOsInstanceRoot(), "data", "run-logs");
-    cachedStore = createLocalFileRunLogStore(basePath);
-  } else {
-    cachedStore = createObjectStoreRunLogStore(createStorageProviderFromConfig(config));
+  const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolveValadrienOsInstanceRoot(), "data", "run-logs");
+  const local = createLocalFileRunLogStore(basePath);
+  const object = config.storageProvider === "local_disk"
+    ? null
+    : createObjectStoreRunLogStore(createStorageProviderFromConfig(config));
+
+  function forHandle(handle: RunLogHandle): RunLogStore {
+    if (handle.store !== "object_store") return local;
+    if (!object) throw notFound("Run log not found");
+    return object;
   }
+
+  cachedStore = {
+    begin: (input) => (object ?? local).begin(input),
+    append: (handle, event) => forHandle(handle).append(handle, event),
+    finalize: (handle) => forHandle(handle).finalize(handle),
+    read: (handle, opts) => forHandle(handle).read(handle, opts),
+  };
   return cachedStore;
 }
 
