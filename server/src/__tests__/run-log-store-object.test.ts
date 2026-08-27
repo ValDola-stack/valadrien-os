@@ -9,10 +9,15 @@ function memoryProvider(opts: { putDelayMs?: number } = {}) {
   const objects = new Map<string, Buffer>();
   const stats = { puts: 0, bytesUploaded: 0, gets: 0 };
   let failHeadAndGetWith: Error | null = null;
+  let failPutMatching: { pattern: RegExp; error: Error; times: number } | null = null;
   const provider: StorageProvider = {
     id: "s3" as never,
     async putObject({ objectKey, body }) {
       if (opts.putDelayMs) await new Promise((r) => setTimeout(r, opts.putDelayMs));
+      if (failPutMatching && failPutMatching.times > 0 && failPutMatching.pattern.test(objectKey)) {
+        failPutMatching.times -= 1;
+        throw failPutMatching.error;
+      }
       stats.puts += 1;
       if (objectKey.endsWith(".ndjson")) stats.bytesUploaded += body.length;
       objects.set(objectKey, Buffer.from(body));
@@ -31,7 +36,11 @@ function memoryProvider(opts: { putDelayMs?: number } = {}) {
     },
     async deleteObject({ objectKey }) { objects.delete(objectKey); },
   };
-  return { provider, objects, stats, fail: (e: Error | null) => { failHeadAndGetWith = e; } };
+  return {
+    provider, objects, stats,
+    fail: (e: Error | null) => { failHeadAndGetWith = e; },
+    failPut: (pattern: RegExp, error: Error, times = 1) => { failPutMatching = { pattern, error, times }; },
+  };
 }
 
 const begin = (s: ReturnType<typeof createObjectStoreRunLogStore>) =>
@@ -151,6 +160,40 @@ describe("object-store run logs", () => {
       expect(paged, `limit=${limit}`).toBe(whole);
       expect(paged.includes("�"), `limit=${limit} must not emit U+FFFD`).toBe(false);
     }
+  });
+
+  // --- Codex round 3, P1: a failed flush must not silently drop its bytes ----------------
+  it("REQUEUES buffered output when a segment upload fails, and finalize surfaces it", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10_000 });
+    const h = await begin(s2);
+    const boom = new Error("ServiceUnavailable");
+    mem.failPut(/\.ndjson$/, boom, 1);
+    // First flush fails; its bytes must survive for the retry rather than vanishing.
+    await expect(s2.append(h, ev("important-output", 0))).rejects.toThrow(/ServiceUnavailable/);
+    await s2.append(h, ev("second-output", 1));
+    const whole = await walk(s2, h, 1_000_000);
+    expect(whole, "bytes from the failed flush must be retried, not dropped").toContain("important-output");
+    expect(whole).toContain("second-output");
+  });
+
+  it("finalize THROWS rather than reporting a byte count the manifest does not cover", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1_000_000, flushMs: 10_000 });
+    const h = await begin(s2);
+    await s2.append(h, ev("buffered-only", 0));
+    mem.failPut(/\.ndjson$/, new Error("ServiceUnavailable"), 99);
+    await expect(s2.finalize(h)).rejects.toThrow(/ServiceUnavailable/);
+  });
+
+  // --- Codex round 3, P2: heartbeat.ts finalizes the same handle twice -------------------
+  it("finalize is IDEMPOTENT — a second call repeats the summary, not an empty log", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2);
+    await s2.append(h, ev("some output", 0));
+    const first = await s2.finalize(h);
+    const second = await s2.finalize(h);
+    expect(second.bytes, "second finalize must not report 0 bytes").toBe(first.bytes);
+    expect(second.sha256).toBe(first.sha256);
+    expect(first.bytes).toBeGreaterThan(0);
   });
 
   it("enforces the per-run size cap and marks the log truncated", async () => {

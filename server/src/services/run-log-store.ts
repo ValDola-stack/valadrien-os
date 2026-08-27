@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { notFound } from "../errors.js";
 import { loadConfig } from "../config.js";
 import { createStorageProviderFromConfig } from "../storage/provider-registry.js";
+import { createS3StorageProvider } from "../storage/s3-provider.js";
 import type { StorageProvider } from "../storage/types.js";
 import { resolveValadrienOsInstanceRoot } from "../home-paths.js";
 
@@ -213,17 +214,26 @@ export function createObjectStoreRunLogStore(
     total: number;
     truncated: boolean;
     timer: NodeJS.Timeout | null;
+    /** Last flush failure, surfaced by finalize() so a short transcript is never reported clean. */
+    lastError: unknown;
     /** Serialises uploads: a flush must never overlap another flush on the same run. */
     chain: Promise<void>;
   };
   const pending = new Map<string, Pending>();
+  /**
+   * Completed summaries. heartbeat.ts finalizes the same handle twice when a run fails after its
+   * normal finalize (normal path, then the error path), and a second call must not report an
+   * empty log — that would persist zero bytes and the hash of "" over correct metadata.
+   */
+  const finalized = new Map<string, RunLogFinalizeSummary>();
+  const FINALIZED_CACHE_MAX = 256;
 
   function state(logRef: string): Pending {
     let p = pending.get(logRef);
     if (!p) {
       p = {
         chunks: [], buffered: 0, manifest: { segments: [], truncated: false },
-        hash: createHash("sha256"), total: 0, truncated: false, timer: null,
+        hash: createHash("sha256"), total: 0, truncated: false, timer: null, lastError: null,
         chain: Promise.resolve(),
       };
       pending.set(logRef, p);
@@ -269,7 +279,7 @@ export function createObjectStoreRunLogStore(
       // Detach the exact snapshot being uploaded BEFORE awaiting, so an append that lands during
       // the upload accumulates into the next flush instead of being cleared by this one.
       const snapshot = p.chunks;
-      const bytes = p.buffered;
+      const snapshotBytes = p.buffered;
       if (snapshot.length === 0) return;
       p.chunks = [];
       p.buffered = 0;
@@ -277,15 +287,34 @@ export function createObjectStoreRunLogStore(
 
       const body = Buffer.concat(snapshot);
       const key = `${logRef}/${String(p.manifest.segments.length + 1).padStart(5, "0")}.ndjson`;
-      await provider.putObject({ objectKey: key, body, contentType: "application/x-ndjson", contentLength: body.length });
+      try {
+        await provider.putObject({ objectKey: key, body, contentType: "application/x-ndjson", contentLength: body.length });
+      } catch (error) {
+        // The segment never landed. Put the bytes back at the FRONT so ordering holds and the next
+        // flush (or finalize) retries them — dropping them would let finalize report a byte count
+        // and sha256 covering data that is not in the manifest, i.e. a silently short transcript.
+        p.chunks = [...snapshot, ...p.chunks];
+        p.buffered += snapshotBytes;
+        p.lastError = error;
+        throw error;
+      }
       // Segment first, then manifest: a crash between the two leaves an unreferenced segment
       // (harmless) rather than a manifest pointing at an object that does not exist.
       p.manifest.segments.push({ key, bytes: body.length });
       p.manifest.truncated = p.truncated;
-      await putManifest(logRef, p.manifest);
-      void bytes;
+      try {
+        await putManifest(logRef, p.manifest);
+      } catch (error) {
+        // The bytes ARE durable in the segment; only the manifest write failed. Do not requeue
+        // (that would upload the same bytes again as a second segment). The in-memory manifest
+        // already lists this segment, so the next flush's manifest write is self-healing.
+        p.lastError = error;
+        throw error;
+      }
+      p.lastError = null;
     });
-    p.chain = next.catch(() => undefined);
+    // Keep the chain usable after a failure, but never let a rejection go unobserved.
+    p.chain = next.then(() => undefined, () => undefined);
     return next;
   }
 
@@ -296,7 +325,9 @@ export function createObjectStoreRunLogStore(
     // age only on the NEXT append meant such a run stayed in process memory until finalize — and
     // vanished entirely if the worker hung or exited, which is the data-loss case this store exists
     // to remove.
-    p.timer = setTimeout(() => { void flush(logRef); }, flushMs);
+    // A rejected timer flush is recorded on p.lastError and retried; swallow here so it
+    // cannot surface as an unhandled rejection.
+    p.timer = setTimeout(() => { void flush(logRef).catch(() => undefined); }, flushMs);
     p.timer.unref?.();
   }
 
@@ -353,10 +384,18 @@ export function createObjectStoreRunLogStore(
 
     async finalize(handle) {
       if (handle.store !== "object_store") return { bytes: 0, compressed: false };
+      const cached = finalized.get(handle.logRef);
+      if (cached) return cached;
       const p = state(handle.logRef);
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
       await flush(handle.logRef);
+      if (p.lastError) throw p.lastError;
       const summary = { bytes: p.total, sha256: p.hash.copy().digest("hex"), compressed: false };
+      if (finalized.size >= FINALIZED_CACHE_MAX) {
+        const oldest = finalized.keys().next().value;
+        if (oldest !== undefined) finalized.delete(oldest);
+      }
+      finalized.set(handle.logRef, summary);
       pending.delete(handle.logRef);
       return summary;
     },
@@ -436,9 +475,23 @@ export function getRunLogStore(): RunLogStore {
   const config = loadConfig();
   const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolveValadrienOsInstanceRoot(), "data", "run-logs");
   const local = createLocalFileRunLogStore(basePath);
-  const object = config.storageProvider === "local_disk"
-    ? null
-    : createObjectStoreRunLogStore(createStorageProviderFromConfig(config));
+  // Build the object-store READER whenever S3 settings exist, independently of which backend
+  // begin() selects. Tying the reader to the current provider broke both directions in turn:
+  // switching to S3 stranded local_file runs, and gating it the other way strands object_store
+  // runs the moment an instance switches back to local_disk, even though the objects are still
+  // there. Both readers stay available; only new runs follow the configured provider.
+  const objectProvider = config.storageProvider === "local_disk"
+    ? (config.storageS3Bucket
+        ? createS3StorageProvider({
+            bucket: config.storageS3Bucket,
+            region: config.storageS3Region,
+            endpoint: config.storageS3Endpoint,
+            prefix: config.storageS3Prefix,
+            forcePathStyle: config.storageS3ForcePathStyle,
+          })
+        : null)
+    : createStorageProviderFromConfig(config);
+  const object = objectProvider ? createObjectStoreRunLogStore(objectProvider) : null;
 
   function forHandle(handle: RunLogHandle): RunLogStore {
     if (handle.store !== "object_store") return local;
@@ -447,7 +500,7 @@ export function getRunLogStore(): RunLogStore {
   }
 
   cachedStore = {
-    begin: (input) => (object ?? local).begin(input),
+    begin: (input) => (config.storageProvider === "local_disk" ? local : (object ?? local)).begin(input),
     append: (handle, event) => forHandle(handle).append(handle, event),
     finalize: (handle) => forHandle(handle).finalize(handle),
     read: (handle, opts) => forHandle(handle).read(handle, opts),
