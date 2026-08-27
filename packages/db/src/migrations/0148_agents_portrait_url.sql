@@ -1,0 +1,13 @@
+-- agents.portrait_url — closes a schema/migration gap in the sync lineage.
+--
+-- The column is declared in the ORM (packages/db/src/schema/agents.ts) and is
+-- populated in production, but NO migration in this lineage ever created it:
+-- it was added by the rebrand lineage's 0094 and never carried across the
+-- 2026-07-13 upstream sync. Production is fine because the column pre-dates the
+-- cutover, but any FRESH database built from these migrations lacked it, which
+-- broke provisioning and 50 server tests ("column portrait_url of relation
+-- agents does not exist").
+--
+-- IDEMPOTENT ON PURPOSE, matching 0147/0148: production and every rebrand-lineage
+-- database already have this column, fresh installs do not. Both must survive.
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "portrait_url" text;
