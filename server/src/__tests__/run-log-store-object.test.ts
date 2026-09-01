@@ -194,6 +194,51 @@ describe("object-store run logs (single object per run)", () => {
       Buffer.byteLength(durable, "utf8"));
   });
 
+  // --- Codex round 5, P1: finalize must await a flush already in flight -------------------
+  it("WAITS for an in-flight flush before summarizing", async () => {
+    const slow = memoryProvider({ putDelayMs: 40 });
+    const s2 = createObjectStoreRunLogStore(slow.provider, { flushBytes: 1, flushMs: 10_000 });
+    const h = await begin(s2);
+    // Start a flush and do NOT await it: its snapshot is detached, so p.chunks is empty while the
+    // PUT is still pending. A chunks-only drain loop would skip it and summarise stale state.
+    const inflight = s2.append(h, ev("in-flight-output", 0));
+    await new Promise((r) => setTimeout(r, 5));
+    const summary = await s2.finalize(h);
+    await inflight;
+    const durable = slow.objects.get(KEY)!.toString("utf8");
+    expect(durable, "the in-flight chunk must be durable").toContain("in-flight-output");
+    expect(summary.bytes, "summary must cover the in-flight flush, not stale state")
+      .toBe(Buffer.byteLength(durable, "utf8"));
+  });
+
+  // --- Codex round 5, P2: a failed timed flush must re-arm the timer ----------------------
+  it("RE-ARMS the timer after a timed flush fails, so bytes still reach storage", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1_000_000, flushMs: 30 });
+    const h = await begin(s2);
+    mem.failNextPuts(1);
+    await s2.append(h, ev("quiet-output", 0));   // buffered; timer armed
+    await new Promise((r) => setTimeout(r, 90)); // timer fires, PUT fails, must re-arm
+    await new Promise((r) => setTimeout(r, 90)); // second attempt should succeed
+    expect(mem.objects.get(KEY)!.toString("utf8"),
+      "a failed timed flush must be retried without further output").toContain("quiet-output");
+  });
+
+  // --- Codex round 5, P2: in-flight bytes count against the cap ---------------------------
+  it("COUNTS in-flight bytes against the size cap", async () => {
+    const slow = memoryProvider({ putDelayMs: 40 });
+    const s2 = createObjectStoreRunLogStore(slow.provider, { maxBytes: 300, flushBytes: 1, flushMs: 10_000 });
+    const h = await begin(s2);
+    const big = "x".repeat(180);
+    const first = s2.append(h, ev(big, 0));      // detaches ~200b into an in-flight flush
+    await new Promise((r) => setTimeout(r, 5));
+    await s2.append(h, ev(big, 1));              // must NOT be admitted as if the log were empty
+    await first;
+    await s2.finalize(h).catch(() => undefined);
+    const durable = slow.objects.get(KEY)!;
+    expect(durable.length, "the cap must account for in-flight bytes").toBeLessThanOrEqual(300 + 200);
+    expect(durable.toString("utf8")).toContain("run log truncated");
+  });
+
   it("DROPS appends after finalize instead of rewriting the transcript", async () => {
     const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
     const h = await begin(s);

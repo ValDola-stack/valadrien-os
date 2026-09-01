@@ -208,6 +208,8 @@ export function createObjectStoreRunLogStore(
     /** Buffered, not yet durable. */
     chunks: Buffer[];
     buffered: number;
+    /** Bytes detached into an in-flight flush: no longer in `buffered`, not yet in `flushed`. */
+    inFlight: number;
     /** Mirror of the object as last written. The whole log, because we rewrite it wholesale. */
     flushed: Buffer;
     /** Whether `flushed` is known to match durable state (true for a run this process began). */
@@ -233,7 +235,7 @@ export function createObjectStoreRunLogStore(
     let p = pending.get(logRef);
     if (!p) {
       p = {
-        chunks: [], buffered: 0, flushed: Buffer.alloc(0), adopted: false,
+        chunks: [], buffered: 0, inFlight: 0, flushed: Buffer.alloc(0), adopted: false,
         truncated: false, timer: null, lastError: null, chain: Promise.resolve(),
       };
       pending.set(logRef, p);
@@ -286,6 +288,9 @@ export function createObjectStoreRunLogStore(
       if (snapshot.length === 0) return;
       p.chunks = [];
       p.buffered = 0;
+      // Accounted as in-flight until it lands, so the cap check cannot admit another chunk on the
+      // strength of bytes that are neither buffered nor durable yet.
+      p.inFlight = snapshotBytes;
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
 
       try {
@@ -293,6 +298,7 @@ export function createObjectStoreRunLogStore(
         const body = Buffer.concat([p.flushed, ...snapshot]);
         await put(logRef, body);
         p.flushed = body;
+        p.inFlight = 0;
         p.lastError = null;
       } catch (error) {
         // Put the bytes back at the FRONT so ordering holds and the next flush (or finalize)
@@ -300,7 +306,12 @@ export function createObjectStoreRunLogStore(
         // never reached storage.
         p.chunks = [...snapshot, ...p.chunks];
         p.buffered += snapshotBytes;
+        p.inFlight = 0;
         p.lastError = error;
+        // :304 — the flush cleared the timer on its way in. Without re-arming, a quiet run whose
+        // timed flush failed keeps its bytes in memory indefinitely: it still reads as empty and a
+        // later worker death still loses the transcript, which is the case the timer exists for.
+        armTimer(logRef);
         throw error;
       }
     });
@@ -356,7 +367,7 @@ export function createObjectStoreRunLogStore(
         ...(typeof event.seq === "number" && Number.isFinite(event.seq) ? { seq: event.seq } : {}),
       });
       const persisted = Buffer.from(`${line}\n`, "utf8");
-      const current = p.flushed.length + p.buffered;
+      const current = p.flushed.length + p.buffered + p.inFlight;
 
       if (current + persisted.length > maxBytes) {
         p.truncated = true;
@@ -384,10 +395,15 @@ export function createObjectStoreRunLogStore(
       const p = state(handle.logRef);
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
 
-      // Drain, don't single-flush: an append arriving while finalize's own flush is uploading
-      // lands in p.chunks, and returning here would seal a log missing those bytes.
-      for (let guard = 0; p.chunks.length > 0; guard += 1) {
+      // Settle, don't single-flush. Two orderings must both be handled: a flush ALREADY in flight
+      // when finalize starts (its snapshot is detached, so p.chunks is empty and a chunks-only
+      // loop would skip it and summarise stale p.flushed), and an append arriving DURING
+      // finalize's own flush. Awaiting the chain first covers the former; re-checking covers the
+      // latter.
+      for (let guard = 0; ; guard += 1) {
         if (guard > 32) throw new Error(`Run log did not settle for ${handle.logRef}`);
+        await p.chain;
+        if (p.chunks.length === 0) break;
         await flush(handle.logRef);
       }
       if (p.lastError) throw p.lastError;
