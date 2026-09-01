@@ -150,7 +150,10 @@ describe("object-store run logs (single object per run)", () => {
     const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10_000 });
     const h = await begin(s);
     mem.failNextPuts(1);
-    await expect(s.append(h, ev("important-output", 0))).rejects.toThrow(/ServiceUnavailable/);
+    // append() must NOT reject: flush has already requeued the snapshot and armed a retry, and
+    // the adapter's fire-and-forget logger attaches no rejection handler.
+    const accepted = await s.append(h, ev("important-output", 0));
+    expect(accepted, "a transient flush failure must stay inside the retry pipeline").toBeGreaterThan(0);
     await s.append(h, ev("second-output", 1));
     const whole = mem.objects.get(KEY)!.toString("utf8");
     expect(whole, "bytes from the failed flush must be retried, not dropped").toContain("important-output");
@@ -341,6 +344,39 @@ describe("object-store run logs (single object per run)", () => {
         expect(r.content.includes("\uFFFD"), `o=${offset} l=${limit} must not emit U+FFFD`).toBe(false);
       }
     }
+  });
+
+  // --- Codex round 8, P2: transient failures must not reject append() ----------------------
+  it("does NOT reject append() on a transient flush failure", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10_000 });
+    const h = await begin(s2);
+    mem.failNextPuts(1);
+    await expect(s2.append(h, ev("transient", 0))).resolves.toBeGreaterThan(0);
+  });
+
+  // --- Codex round 8, P1 (partial coverage) --------------------------------------------------
+  // NOTE: this asserts the SAFETY of tombstoning, not the memory release that motivated it.
+  // Releasing p.flushed is not observable through the public API — once a run is tombstoned no
+  // append is accepted, so no flush can reach storage whether or not the mirror was cleared. The
+  // negative control confirmed as much: removing the compaction leaves this test passing. The
+  // memory fix is reasoned, not test-verified; what IS verified is that a tombstoned run accepts
+  // nothing, never overwrites the partial transcript that is durable, and still reports failure.
+  it("seals a permanently failed run without disturbing its durable partial transcript", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10 });
+    const h = await begin(s2);
+    await s2.append(h, ev("DURABLE-PART", 0));             // lands successfully
+    const durableBefore = mem.objects.get(KEY)!.toString("utf8");
+    expect(durableBefore).toContain("DURABLE-PART");
+
+    mem.failNextPuts(999);                                  // outage
+    await s2.append(h, ev("lost-part", 1));
+    await new Promise((r) => setTimeout(r, 400));            // exhaust retries -> tombstone
+    mem.failNextPuts(0);                                     // storage recovers
+
+    expect(await s2.append(h, ev("after-recovery", 2)), "tombstoned run accepts nothing").toBe(0);
+    expect(mem.objects.get(KEY)!.toString("utf8"),
+      "the partial transcript that IS durable must be untouched").toBe(durableBefore);
+    await expect(s2.finalize(h)).rejects.toThrow(/ServiceUnavailable/);
   });
 
   it("enforces the per-run size cap and marks the log truncated", async () => {

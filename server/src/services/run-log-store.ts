@@ -283,6 +283,9 @@ export function createObjectStoreRunLogStore(
    */
   function assertWritable(logRef: string, p: Pending) {
     if (!p.adopted) throw notFound("Run log is sealed");
+    // The mirror was released when the run was tombstoned; writing now would replace the partial
+    // transcript that IS durable with only whatever arrived afterwards.
+    if (p.failedPermanently) throw notFound("Run log permanently failed");
   }
 
   /** Enqueue a flush on the run's serial chain and wait for it. */
@@ -329,9 +332,15 @@ export function createObjectStoreRunLogStore(
           // accepting output and stop being able to look successful: otherwise storage recovering
           // mid-run would let later chunks upload, clear lastError, and have finalize report a
           // clean byte count and hash for a transcript that is missing everything before it.
+          // Compact to a tombstone. Clearing only chunks/buffered still pinned the whole-object
+          // mirror — up to the 4MB cap — for the life of the process, and nothing ever deletes the
+          // pending entry, so a sustained outage could still exhaust worker memory even with
+          // retries stopped. What survives is just the flags and lastError, which is all the run
+          // can still legitimately report.
           p.failedPermanently = true;
           p.chunks = [];
           p.buffered = 0;
+          p.flushed = Buffer.alloc(0);
         }
         throw error;
       }
@@ -339,6 +348,17 @@ export function createObjectStoreRunLogStore(
     // Keep the chain usable after a failure, and never leave a rejection unobserved.
     p.chain = next.then(() => undefined, () => undefined);
     return next;
+  }
+
+  /**
+   * Flush without propagating a transient failure to the caller. flush() has already requeued the
+   * snapshot, recorded lastError and armed a retry, so rethrowing here would reject append() for a
+   * failure the pipeline is already handling — aborting awaited adapter logging, and producing an
+   * unhandled rejection in the fire-and-forget callbacks that never attach a handler. finalize()
+   * remains the place a failure is reported.
+   */
+  async function flushQuietly(logRef: string) {
+    await flush(logRef).catch(() => undefined);
   }
 
   function armTimer(logRef: string) {
@@ -403,13 +423,13 @@ export function createObjectStoreRunLogStore(
         })}\n`, "utf8");
         p.chunks.push(marker);
         p.buffered += marker.length;
-        await flush(handle.logRef);
+        await flushQuietly(handle.logRef);
         return 0;
       }
 
       p.chunks.push(persisted);
       p.buffered += persisted.length;
-      if (p.buffered >= flushBytes) await flush(handle.logRef);
+      if (p.buffered >= flushBytes) await flushQuietly(handle.logRef);
       else armTimer(handle.logRef);
       return persisted.length;
     },
