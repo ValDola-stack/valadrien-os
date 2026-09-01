@@ -471,9 +471,15 @@ export function createObjectStoreRunLogStore(
       for (let guard = 0; ; guard += 1) {
         if (guard > 32) throw new Error(`Run log did not settle for ${handle.logRef}`);
         await p.chain;
-        if (p.chunks.length === 0) break;
-        await flush(handle.logRef);
+        if (p.chunks.length === 0 || p.failedPermanently) break;
+        // Consume the retry budget here rather than rejecting on the first failure. A raw flush()
+        // rejected finalize() on a single transient PUT, and in the heartbeat success path that
+        // rejection escapes into the catch at heartbeat.ts:13239 and marks the run FAILED even
+        // though the adapter succeeded — a storage blip rewriting the run's outcome.
+        await flushQuietly(handle.logRef);
       }
+      // Only report failure once the budget is genuinely exhausted; a flush that later succeeded
+      // clears lastError.
       if (p.lastError) throw p.lastError;
 
       const summary: RunLogFinalizeSummary = {

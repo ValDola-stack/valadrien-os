@@ -168,6 +168,18 @@ describe("object-store run logs (single object per run)", () => {
     await expect(s.finalize(h)).rejects.toThrow(/ServiceUnavailable/);
   });
 
+  // --- Codex round 9, P1: a transient PUT during finalize must not fail the RUN -------------
+  it("finalize RETRIES a transient failure instead of failing the run", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1_000_000, flushMs: 10_000 });
+    const h = await begin(s2);
+    await s2.append(h, ev("adapter-succeeded", 0));   // buffered, nothing flushed yet
+    mem.failNextPuts(1);                               // the final PUT blips once
+    // Rejecting here escapes into heartbeat.ts:13239 and marks a successful run as failed.
+    const summary = await s2.finalize(h);
+    expect(mem.objects.get(KEY)!.toString("utf8")).toContain("adapter-succeeded");
+    expect(summary.bytes).toBe(mem.objects.get(KEY)!.length);
+  });
+
   it("finalize is IDEMPOTENT — a second call repeats the summary", async () => {
     const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
     const h = await begin(s);
