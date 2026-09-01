@@ -15,16 +15,22 @@ Reconciliation is already running in slices (slice 1 = agent portraits read-path
 
 ## Highest-value items
 
-> **Status update 2026-09-01 — run logs UNPARKED, rewritten, in review as #30.** Three designs
-> were attempted. The postgres port (#29, closed) contradicted `doc/spec/agent-runs.md`, which
-> makes object_store the cloud default and postgres a capped fallback. The first spec-aligned
-> rewrite used segments plus a manifest and reached four review rounds, each finding a
-> data-corruption bug in the previous round's fixes — the defects lived in the interactions
-> between segment numbering, manifest adoption, dirty-manifest retry, the finalized cache and the
-> flush chain, not in any one of them. #30 now carries the **simplification**: one object per run,
-> rewritten on flush, 4MB cap, no segment layer. That deletes those interactions rather than
-> fixing them, at a bounded cost (~34MB re-uploaded for a run that fills the cap). Every bug the
-> reviews found still has a regression test.
+> **✅ RESOLVED 2026-09-01 — run logs SHIPPED (#30, `283f11cb6`) and deployed to production.**
+> "Run log not found", live since 2026-06-13, is fixed: transcripts now go to object storage,
+> which both the Railway worker and the Vercel control plane can reach. Three designs were
+> attempted — a postgres port (#29, closed) that contradicted `doc/spec/agent-runs.md`; a
+> segment-plus-manifest object store that produced a data-corruption bug at every one of four
+> review rounds; and the shipped design, ONE OBJECT PER RUN rewritten on flush with a 4MB cap,
+> which deletes those interactions rather than fixing them. Nine review rounds total, every
+> finding with a regression test and every fix negative-controlled.
+>
+> **Caveat worth remembering:** the final head had zero new findings but no submitted review
+> object, and CodeRabbit permanently skips this base branch — so this code had exactly one
+> reviewer throughout. If run logs misbehave, that is the weak spot.
+>
+> **NOT yet verified end-to-end in production:** deployment succeeded, but that a real run's
+> transcript now loads in the UI has not been confirmed — it needs an authenticated look at an
+> actual run.
 
 1. **`feat/db-backed-run-logs` fixes a live, still-open bug.** Production has no run-log schema at
    all — it still uses the file/object-store path (`server/src/services/run-log-store.ts`) that
