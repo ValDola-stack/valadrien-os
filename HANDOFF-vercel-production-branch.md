@@ -1,11 +1,24 @@
-# HANDOFF → runtime/infra: Vercel Production Branch points at a dead lineage
+# Vercel production branch — RESOLVED 2026-08-31
 
-> **🔴 REOPENED 2026-08-26.** This was resolved on 2026-06-07 by setting Production Branch =
-> `rebrand/valadrien-os`. **That branch is no longer the production lineage**, so the original
-> failure mode is back: pushes build previews and never ship. History of the first fix is at the
-> bottom.
+> **✅ DONE.** Production Branch is now `sync/upstream-20260713` and **Auto-assign Custom
+> Production Domains is ENABLED**. A push to the sync branch creates a production deployment AND
+> moves `os.valadrien.dev` to it. Both live at **Settings → Environments → Production → Branch
+> Tracking** (not Settings → Git on the current dashboard).
 >
-> **BLOCKED** on two things outside this repo — see §3. Do not start until both are cleared.
+> **The "pinned alias" in the old notes was a MISDIAGNOSIS.** `os.valadrien.dev` was never pinned
+> by a rollback — auto-assign was simply switched off, which makes every production deployment
+> require manual promotion. That is why `vercel --prod` kept building production and leaving the
+> live domain behind. The `vercel alias set … --scope valdola-stacks-projects` workaround is no
+> longer needed.
+>
+> Also worth remembering: the 402 `DEPLOYMENT_DISABLED` payment block (2026-08-26 → 08-31) stopped
+> deployment **creation**, not just serving. Pushes made during it produced no builds and were
+> never queued. After an outage like that, check `list_deployments` rather than assuming pushes
+> landed.
+
+The original problem statement and evidence are kept below for context.
+
+---
 
 ## 1. The problem
 
