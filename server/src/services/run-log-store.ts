@@ -214,6 +214,8 @@ export function createObjectStoreRunLogStore(
     inFlight: number;
     /** Consecutive failed flushes; bounds the retry timer so an outage cannot storm forever. */
     failures: number;
+    /** Set once retries are exhausted: the run is permanently incomplete and must stay that way. */
+    failedPermanently: boolean;
     /** Mirror of the object as last written. The whole log, because we rewrite it wholesale. */
     flushed: Buffer;
     /** Whether `flushed` is known to match durable state (true for a run this process began). */
@@ -235,11 +237,20 @@ export function createObjectStoreRunLogStore(
   const finalized = new Map<string, RunLogFinalizeSummary>();
   const FINALIZED_CACHE_MAX = 256;
 
+  function remember(logRef: string, summary: RunLogFinalizeSummary) {
+    if (finalized.size >= FINALIZED_CACHE_MAX) {
+      const oldest = finalized.keys().next().value;
+      if (oldest !== undefined) finalized.delete(oldest);
+    }
+    finalized.set(logRef, summary);
+  }
+
   function state(logRef: string): Pending {
     let p = pending.get(logRef);
     if (!p) {
       p = {
-        chunks: [], buffered: 0, inFlight: 0, failures: 0, flushed: Buffer.alloc(0), adopted: false,
+        chunks: [], buffered: 0, inFlight: 0, failures: 0, failedPermanently: false,
+        flushed: Buffer.alloc(0), adopted: false,
         truncated: false, timer: null, lastError: null, chain: Promise.resolve(),
       };
       pending.set(logRef, p);
@@ -297,7 +308,7 @@ export function createObjectStoreRunLogStore(
         p.flushed = body;
         p.inFlight = 0;
         p.failures = 0;
-        p.lastError = null;
+        if (!p.failedPermanently) p.lastError = null;
       } catch (error) {
         // Put the bytes back at the FRONT so ordering holds and the next flush (or finalize)
         // retries them. Dropping them would let finalize report a byte count covering data that
@@ -313,7 +324,15 @@ export function createObjectStoreRunLogStore(
         // life of the process. After the bound we stop retrying, drop the unwritable bytes, and
         // keep lastError so finalize still reports the failure rather than a short log.
         if (p.failures < MAX_FLUSH_RETRIES) armTimer(logRef);
-        else { p.chunks = []; p.buffered = 0; }
+        else {
+          // Terminal. Dropping the unwritable bytes frees memory, but the run must also stop
+          // accepting output and stop being able to look successful: otherwise storage recovering
+          // mid-run would let later chunks upload, clear lastError, and have finalize report a
+          // clean byte count and hash for a transcript that is missing everything before it.
+          p.failedPermanently = true;
+          p.chunks = [];
+          p.buffered = 0;
+        }
         throw error;
       }
     });
@@ -362,6 +381,7 @@ export function createObjectStoreRunLogStore(
       // belongs to a finished run whose logBytes/logSha256 are already persisted. Dropped at the
       // append boundary rather than thrown, for the same reason — these callbacks are unawaited.
       if (!p.adopted) return 0;
+      if (p.failedPermanently) return 0;
       if (p.truncated) return 0;
 
       const line = JSON.stringify({
@@ -399,6 +419,21 @@ export function createObjectStoreRunLogStore(
       const cached = finalized.get(handle.logRef);
       if (cached) return cached;
       const p = state(handle.logRef);
+      if (!p.adopted) {
+        // State was recreated for a run this process did not begin — a re-finalize whose summary
+        // has aged out of the bounded cache. Summarising the empty in-memory state would persist
+        // zero bytes and the hash of "" over correct metadata, so recover from the object itself.
+        const recovered = await provider.getObject({ objectKey: handle.logRef });
+        const body = await drain(recovered.stream);
+        const summary: RunLogFinalizeSummary = {
+          bytes: body.length,
+          sha256: createHash("sha256").update(body).digest("hex"),
+          compressed: false,
+        };
+        remember(handle.logRef, summary);
+        pending.delete(handle.logRef);
+        return summary;
+      }
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
 
       // Settle, don't single-flush. Two orderings must both be handled: a flush ALREADY in flight
@@ -419,11 +454,7 @@ export function createObjectStoreRunLogStore(
         sha256: createHash("sha256").update(p.flushed).digest("hex"),
         compressed: false,
       };
-      if (finalized.size >= FINALIZED_CACHE_MAX) {
-        const oldest = finalized.keys().next().value;
-        if (oldest !== undefined) finalized.delete(oldest);
-      }
-      finalized.set(handle.logRef, summary);
+      remember(handle.logRef, summary);
       pending.delete(handle.logRef);
       return summary;
     },
@@ -447,7 +478,10 @@ export function createObjectStoreRunLogStore(
       // Over-fetch up to 3 bytes so a page boundary inside a multibyte character can advance to the
       // next code point. Decoding a split character independently emits U+FFFD on both sides, and
       // the caller advancing by byte offset never recombines them.
-      const fetchEnd = Math.min(end + 3, total);
+      // Six, not three: start alignment can consume up to 3 bytes skipping continuation bytes,
+      // and end alignment needs up to 3 more beyond `end`. Sharing one budget left too few bytes
+      // when both boundaries land mid-character (e.g. "😀😀" at offset 1, limitBytes 1).
+      const fetchEnd = Math.min(end + 6, total);
       const result = await provider.getObject({
         objectKey: handle.logRef, range: { start: offset, end: fetchEnd - 1 },
       });
@@ -469,10 +503,16 @@ export function createObjectStoreRunLogStore(
 }
 
 function utf8BoundaryAtOrAfter(buf: Buffer, want: number): number {
-  if (want >= buf.length) return buf.length;
-  let i = Math.max(0, want);
+  if (buf.length === 0) return 0;
+  let i = Math.max(0, Math.min(want, buf.length));
   while (i < buf.length && (buf[i]! & 0xc0) === 0x80) i += 1;
-  return i === 0 ? buf.length : i;
+  if (i > 0) return i;
+  // want was 0 AND byte 0 is a lead byte: consume exactly ONE complete character. Returning the
+  // whole buffer here (the previous behaviour) handed back whatever the overfetch happened to
+  // include, which ends mid-character and decodes to a trailing U+FFFD.
+  const lead = buf[0]!;
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  return Math.min(need, buf.length);
 }
 
 /** True when a storage error means "no such object" rather than a transport/permission failure. */

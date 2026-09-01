@@ -300,6 +300,49 @@ describe("object-store run logs (single object per run)", () => {
     }
   });
 
+  // --- Codex round 7, P1: retry exhaustion must be terminal, not just a buffer drop --------
+  it("stays PERMANENTLY FAILED after retry exhaustion — recovery cannot fake success", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10 });
+    const h = await begin(s2);
+    mem.failNextPuts(999);
+    await s2.append(h, ev("LOST-OUTPUT", 0)).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 400));   // exhaust the retry bound
+    mem.failNextPuts(0);                            // storage recovers, run still going
+    expect(await s2.append(h, ev("later-output", 1)), "must not accept more output").toBe(0);
+    // finalize must NOT report a clean hash for a transcript missing everything before the outage.
+    await expect(s2.finalize(h)).rejects.toThrow(/ServiceUnavailable/);
+  });
+
+  // --- Codex round 7, P2: finalize idempotence must survive cache eviction ------------------
+  it("RECOVERS the summary from durable state when the cache has evicted it", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2, "victim3");
+    await s2.append(h, ev("REAL-TRANSCRIPT", 0));
+    const first = await s2.finalize(h);
+    for (let i = 0; i < 300; i += 1) {   // evict it
+      const o = await begin(s2, `f3-${i}`);
+      await s2.append(o, ev("x", 0));
+      await s2.finalize(o);
+    }
+    const again = await s2.finalize(h);
+    expect(again.bytes, "must not report zero bytes after eviction").toBe(first.bytes);
+    expect(again.sha256, "must not report the hash of an empty log").toBe(first.sha256);
+  });
+
+  // --- Codex round 7, P2: both boundaries need their own overfetch budget -------------------
+  it("aligns both ends when BOTH land mid-character (4-byte emoji)", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2);
+    await s2.append(h, ev("😀😀😀", 0));
+    const whole = mem.objects.get(KEY)!;
+    for (let offset = 0; offset < whole.length; offset += 1) {
+      for (const limit of [1, 2, 3, 4]) {
+        const r = await s2.read(h, { offset, limitBytes: limit });
+        expect(r.content.includes("\uFFFD"), `o=${offset} l=${limit} must not emit U+FFFD`).toBe(false);
+      }
+    }
+  });
+
   it("enforces the per-run size cap and marks the log truncated", async () => {
     const s = createObjectStoreRunLogStore(mem.provider, { maxBytes: 400, flushBytes: 1 });
     const h = await begin(s);
