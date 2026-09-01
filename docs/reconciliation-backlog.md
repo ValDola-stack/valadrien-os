@@ -15,14 +15,16 @@ Reconciliation is already running in slices (slice 1 = agent portraits read-path
 
 ## Highest-value items
 
-> **Status update 2026-08-27 — run logs are PARKED, not fixed.** Two attempts were made and
-> neither merged. The postgres port (#29, closed) contradicted `doc/spec/agent-runs.md`, which
-> makes object_store the cloud default and postgres a capped fallback. The spec-aligned rewrite
-> (#30, **draft**) reached five review rounds, each finding real bugs in the previous round's
-> fixes, including two P1s introduced by a dedicated adversarial pass. Its state machine —
-> buffering, timer, flush chain, segment numbering, manifest adoption, dirty-manifest retry,
-> finalized cache — is the problem. Recommended restart: one object per run, rewritten on flush,
-> ~4MB cap, no segment layer. See #30 for the full findings and rationale.
+> **Status update 2026-09-01 — run logs UNPARKED, rewritten, in review as #30.** Three designs
+> were attempted. The postgres port (#29, closed) contradicted `doc/spec/agent-runs.md`, which
+> makes object_store the cloud default and postgres a capped fallback. The first spec-aligned
+> rewrite used segments plus a manifest and reached four review rounds, each finding a
+> data-corruption bug in the previous round's fixes — the defects lived in the interactions
+> between segment numbering, manifest adoption, dirty-manifest retry, the finalized cache and the
+> flush chain, not in any one of them. #30 now carries the **simplification**: one object per run,
+> rewritten on flush, 4MB cap, no segment layer. That deletes those interactions rather than
+> fixing them, at a bounded cost (~34MB re-uploaded for a run that fills the cap). Every bug the
+> reviews found still has a regression test.
 
 1. **`feat/db-backed-run-logs` fixes a live, still-open bug.** Production has no run-log schema at
    all — it still uses the file/object-store path (`server/src/services/run-log-store.ts`) that
