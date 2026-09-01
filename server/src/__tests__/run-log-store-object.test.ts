@@ -8,7 +8,7 @@ import { createObjectStoreRunLogStore, type RunLogHandle } from "../services/run
 // to stall or fail on demand.
 function memoryProvider(opts: { putDelayMs?: number } = {}) {
   const objects = new Map<string, Buffer>();
-  const stats = { puts: 0, bytesUploaded: 0 };
+  const stats = { puts: 0, attempts: 0, bytesUploaded: 0 };
   let failReadsWith: Error | null = null;
   let failPuts = 0;
   const notFound = () => { const e = new Error("NoSuchKey"); e.name = "NoSuchKey"; return e; };
@@ -16,6 +16,7 @@ function memoryProvider(opts: { putDelayMs?: number } = {}) {
     id: "s3" as never,
     async putObject({ objectKey, body }) {
       if (opts.putDelayMs) await new Promise((r) => setTimeout(r, opts.putDelayMs));
+      stats.attempts += 1;
       if (failPuts > 0) { failPuts -= 1; throw new Error("ServiceUnavailable"); }
       stats.puts += 1; stats.bytesUploaded += body.length;
       objects.set(objectKey, Buffer.from(body));
@@ -250,38 +251,53 @@ describe("object-store run logs (single object per run)", () => {
     expect(whole).not.toContain("late-straggler");
   });
 
-  it("a late append after the finalized cache evicts the run ADOPTS durable content", async () => {
-    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
-    const h = await begin(s, "victim");
+  // --- Codex round 6, P2: sealing must not depend on the bounded summary cache -------------
+  it("SEALS a run independently of summary-cache eviction — late append is refused", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2, "victim");
     const key = "co/run-logs/ag/victim.ndjson";
-    await s.append(h, ev("ORIGINAL-TRANSCRIPT", 0));
-    await s.finalize(h);
-    for (let i = 0; i < 300; i += 1) {
-      const o = await begin(s, `filler-${i}`);
-      await s.append(o, ev("x", 0));
-      await s.finalize(o);
+    await s2.append(h, ev("ORIGINAL-TRANSCRIPT", 0));
+    const summary = await s2.finalize(h);
+    for (let i = 0; i < 300; i += 1) {   // push the victim out of the 256-entry cache
+      const o = await begin(s2, `filler-${i}`);
+      await s2.append(o, ev("x", 0));
+      await s2.finalize(o);
     }
-    await s.append(h, ev("LATE-STRAGGLER", 99));
-    const whole = mem.objects.get(key)!.toString("utf8");
-    expect(whole, "the completed transcript must survive").toContain("ORIGINAL-TRANSCRIPT");
+    const before = mem.objects.get(key)!.toString("utf8");
+    expect(await s2.append(h, ev("LATE-STRAGGLER", 99)), "late append must be refused").toBe(0);
+    const after = mem.objects.get(key)!.toString("utf8");
+    expect(after, "durable transcript must be byte-identical").toBe(before);
+    expect(after).toContain("ORIGINAL-TRANSCRIPT");
+    expect(after).not.toContain("LATE-STRAGGLER");
+    // The DB already holds these; appending would make them disagree forever.
+    expect(summary.bytes).toBe(Buffer.byteLength(after, "utf8"));
   });
 
-  it("ABORTS rather than overwriting when adoption hits a transient read failure", async () => {
-    const s = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
-    const h = await begin(s, "victim2");
-    const key = "co/run-logs/ag/victim2.ndjson";
-    await s.append(h, ev("ORIGINAL", 0));
-    await s.finalize(h);
-    for (let i = 0; i < 300; i += 1) {
-      const o = await begin(s, `f2-${i}`);
-      await s.append(o, ev("x", 0));
-      await s.finalize(o);
+  // --- Codex round 6, P1: a permanent outage must not storm retries forever -----------------
+  it("BOUNDS retries and frees the buffer once flushes keep failing", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1, flushMs: 10 });
+    const h = await begin(s2);
+    mem.failNextPuts(999);                      // storage is simply gone
+    await s2.append(h, ev("doomed", 0)).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 400)); // well past 5 retry intervals
+    const attempts = mem.stats.attempts;
+    expect(attempts, "should have retried a few times").toBeGreaterThan(1);
+    await new Promise((r) => setTimeout(r, 300)); // must have STOPPED by now
+    expect(mem.stats.attempts, "retries must be bounded, not perpetual").toBe(attempts);
+    await expect(s2.finalize(h)).rejects.toThrow(/ServiceUnavailable/);
+  });
+
+  // --- Codex round 6, P2: an ARBITRARY start offset must align too --------------------------
+  it("aligns the START of a range, not just the end", async () => {
+    const s2 = createObjectStoreRunLogStore(mem.provider, { flushBytes: 1 });
+    const h = await begin(s2);
+    await s2.append(h, ev("héllo — wörld ✅", 0));
+    const whole = mem.objects.get(KEY)!;
+    // recovery/service.ts reads a tail at an arbitrary byte offset; some land mid-character.
+    for (let offset = 0; offset < whole.length; offset += 1) {
+      const r = await s2.read(h, { offset, limitBytes: 24 });
+      expect(r.content.includes("\uFFFD"), `offset=${offset} must not emit U+FFFD`).toBe(false);
     }
-    const boom = new Error("Timeout"); boom.name = "Timeout";
-    mem.failReads(boom);
-    await expect(s.append(h, ev("LATE", 99))).rejects.toThrow(/Timeout/);
-    mem.failReads(null);
-    expect(mem.objects.get(key)!.toString("utf8"), "must not have been overwritten").toContain("ORIGINAL");
   });
 
   it("enforces the per-run size cap and marks the log truncated", async () => {

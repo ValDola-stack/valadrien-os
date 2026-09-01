@@ -24,6 +24,8 @@ export const OBJECT_STORE_RUN_LOG_MAX_BYTES = 4 * 1024 * 1024;
 /** Flush thresholds: bytes buffered, or age of the oldest unflushed byte. */
 const OBJECT_STORE_FLUSH_BYTES = 256 * 1024;
 const OBJECT_STORE_FLUSH_MS = 1_000;
+/** Consecutive flush failures after which a run stops retrying and frees its buffer. */
+const MAX_FLUSH_RETRIES = 5;
 
 /** True when a persisted `runs.log_store` value names a backend this process can read. */
 export function isRunLogStoreType(value: string | null | undefined): value is RunLogStoreType {
@@ -210,6 +212,8 @@ export function createObjectStoreRunLogStore(
     buffered: number;
     /** Bytes detached into an in-flight flush: no longer in `buffered`, not yet in `flushed`. */
     inFlight: number;
+    /** Consecutive failed flushes; bounds the retry timer so an outage cannot storm forever. */
+    failures: number;
     /** Mirror of the object as last written. The whole log, because we rewrite it wholesale. */
     flushed: Buffer;
     /** Whether `flushed` is known to match durable state (true for a run this process began). */
@@ -235,7 +239,7 @@ export function createObjectStoreRunLogStore(
     let p = pending.get(logRef);
     if (!p) {
       p = {
-        chunks: [], buffered: 0, inFlight: 0, flushed: Buffer.alloc(0), adopted: false,
+        chunks: [], buffered: 0, inFlight: 0, failures: 0, flushed: Buffer.alloc(0), adopted: false,
         truncated: false, timer: null, lastError: null, chain: Promise.resolve(),
       };
       pending.set(logRef, p);
@@ -256,25 +260,18 @@ export function createObjectStoreRunLogStore(
   }
 
   /**
-   * Reconcile `flushed` against durable state. Only needed when in-memory state was RECREATED for
-   * a run whose object already exists — a late append for a run that has aged out of the finalized
-   * cache, say. Without this, the rewrite would replace a complete transcript with just the late
-   * chunk. A run this process began is already adopted, so the common path costs nothing.
+   * A run this process began is `adopted` from the start (begin() writes the object, so durable
+   * content is known-empty). Any state needing adoption was therefore RECREATED for a run we did
+   * not begin — a delayed adapter callback for a run that has aged out of the summary cache, say.
+   * Such a state must never write: the run is finished and its logBytes/logSha256 are already
+   * persisted, so appending would make the durable transcript and the database disagree forever.
+   *
+   * Refusing is strictly simpler and safer than reading the object back and appending to it, and
+   * it seals completed runs INDEPENDENTLY of the bounded summary cache — eviction can no longer
+   * reopen a sealed run.
    */
-  async function adopt(logRef: string, p: Pending) {
-    if (p.adopted) return;
-    let result;
-    try {
-      result = await provider.getObject({ objectKey: logRef });
-    } catch (error) {
-      // begin() writes the object before the handle is persisted, so a missing object means it was
-      // deleted or the bucket/prefix is wrong — a real fault. Proceeding on ANY error would let a
-      // transient timeout overwrite a good transcript with an empty one.
-      if (isObjectNotFound(error)) throw notFound("Run log not found");
-      throw error;
-    }
-    p.flushed = await drain(result.stream);
-    p.adopted = true;
+  function assertWritable(logRef: string, p: Pending) {
+    if (!p.adopted) throw notFound("Run log is sealed");
   }
 
   /** Enqueue a flush on the run's serial chain and wait for it. */
@@ -294,11 +291,12 @@ export function createObjectStoreRunLogStore(
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
 
       try {
-        await adopt(logRef, p);
+        assertWritable(logRef, p);
         const body = Buffer.concat([p.flushed, ...snapshot]);
         await put(logRef, body);
         p.flushed = body;
         p.inFlight = 0;
+        p.failures = 0;
         p.lastError = null;
       } catch (error) {
         // Put the bytes back at the FRONT so ordering holds and the next flush (or finalize)
@@ -308,10 +306,14 @@ export function createObjectStoreRunLogStore(
         p.buffered += snapshotBytes;
         p.inFlight = 0;
         p.lastError = error;
-        // :304 — the flush cleared the timer on its way in. Without re-arming, a quiet run whose
-        // timed flush failed keeps its bytes in memory indefinitely: it still reads as empty and a
-        // later worker death still loses the transcript, which is the case the timer exists for.
-        armTimer(logRef);
+        p.failures += 1;
+        // The flush cleared the timer on its way in. Re-arm so a quiet run whose timed flush
+        // failed still reaches storage — but BOUND it: an outage that never recovers would
+        // otherwise hold every failed run's buffer in memory and fire a PUT every interval for the
+        // life of the process. After the bound we stop retrying, drop the unwritable bytes, and
+        // keep lastError so finalize still reports the failure rather than a short log.
+        if (p.failures < MAX_FLUSH_RETRIES) armTimer(logRef);
+        else { p.chunks = []; p.buffered = 0; }
         throw error;
       }
     });
@@ -356,6 +358,10 @@ export function createObjectStoreRunLogStore(
       // a fire-and-forget callback surfaces as an unhandled rejection in the worker.
       if (finalized.has(handle.logRef)) return 0;
       const p = state(handle.logRef);
+      // Sealed the same way, but INDEPENDENTLY of that bounded cache: a state we did not begin()
+      // belongs to a finished run whose logBytes/logSha256 are already persisted. Dropped at the
+      // append boundary rather than thrown, for the same reason — these callbacks are unawaited.
+      if (!p.adopted) return 0;
       if (p.truncated) return 0;
 
       const line = JSON.stringify({
@@ -446,9 +452,18 @@ export function createObjectStoreRunLogStore(
         objectKey: handle.logRef, range: { start: offset, end: fetchEnd - 1 },
       });
       const buf = await drain(result.stream);
-      const consumed = utf8BoundaryAtOrAfter(buf, end - offset);
-      const nextOffset = offset + consumed < total ? offset + consumed : undefined;
-      return { content: buf.subarray(0, consumed).toString("utf8"), nextOffset };
+      // BOTH boundaries need aligning, not just the end. Paged callers never land mid-character
+      // because we always end on one, but arbitrary offsets do — recovery/service.ts reads a tail
+      // at `logBytes - TAIL_BYTES`, and API/CLI callers may pass anything. Leading continuation
+      // bytes belong to a character whose lead byte precedes `offset`, so they are unreadable here
+      // and are skipped rather than decoded into a leading U+FFFD.
+      let skip = 0;
+      while (skip < buf.length && (buf[skip]! & 0xc0) === 0x80) skip += 1;
+      const body = buf.subarray(skip);
+      const consumed = utf8BoundaryAtOrAfter(body, Math.max(0, end - offset - skip));
+      const advanced = skip + consumed;
+      const nextOffset = offset + advanced < total ? offset + advanced : undefined;
+      return { content: body.subarray(0, consumed).toString("utf8"), nextOffset };
     },
   };
 }
