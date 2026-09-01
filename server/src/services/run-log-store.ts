@@ -205,6 +205,16 @@ export function createObjectStoreRunLogStore(
   const maxBytes = options.maxBytes ?? OBJECT_STORE_RUN_LOG_MAX_BYTES;
   const flushBytes = options.flushBytes ?? OBJECT_STORE_FLUSH_BYTES;
   const flushMs = options.flushMs ?? OBJECT_STORE_FLUSH_MS;
+  // The truncation marker counts against the cap too. Reserve room for it up front so the marker
+  // can never push the durable object, the mirror or the reported byte count past maxBytes — the
+  // spec calls for a STRICT per-run cap, and "slightly over" is still over.
+  const truncationMarker = (ts: string) =>
+    Buffer.from(`${JSON.stringify({
+      ts, stream: "system", chunk: `[run log truncated at ${maxBytes} bytes]`,
+    })}\n`, "utf8");
+  // ISO-8601 timestamps are fixed width, so the marker's size does not vary by run.
+  const MARKER_BYTES = truncationMarker(new Date(0).toISOString()).length;
+  const contentCap = Math.max(0, maxBytes - MARKER_BYTES);
 
   type Pending = {
     /** Buffered, not yet durable. */
@@ -415,12 +425,9 @@ export function createObjectStoreRunLogStore(
       const persisted = Buffer.from(`${line}\n`, "utf8");
       const current = p.flushed.length + p.buffered + p.inFlight;
 
-      if (current + persisted.length > maxBytes) {
+      if (current + persisted.length > contentCap) {
         p.truncated = true;
-        const marker = Buffer.from(`${JSON.stringify({
-          ts: event.ts, stream: "system",
-          chunk: `[run log truncated at ${maxBytes} bytes]`,
-        })}\n`, "utf8");
+        const marker = truncationMarker(event.ts);
         p.chunks.push(marker);
         p.buffered += marker.length;
         await flushQuietly(handle.logRef);

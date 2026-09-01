@@ -379,11 +379,20 @@ describe("object-store run logs (single object per run)", () => {
     await expect(s2.finalize(h)).rejects.toThrow(/ServiceUnavailable/);
   });
 
-  it("enforces the per-run size cap and marks the log truncated", async () => {
-    const s = createObjectStoreRunLogStore(mem.provider, { maxBytes: 400, flushBytes: 1 });
-    const h = await begin(s);
-    for (let i = 0; i < 200; i += 1) await s.append(h, ev("padding-padding", i));
-    expect(mem.objects.get(KEY)!.toString("utf8")).toContain("run log truncated at 400 bytes");
+  it("enforces the per-run size cap STRICTLY, marker included", async () => {
+    for (const maxBytes of [400, 600, 1000]) {
+      const m = memoryProvider();
+      const s2 = createObjectStoreRunLogStore(m.provider, { maxBytes, flushBytes: 1 });
+      const h = await s2.begin({ companyId: "co", agentId: "ag", runId: "cap" });
+      const key = "co/run-logs/ag/cap.ndjson";
+      for (let i = 0; i < 200; i += 1) await s2.append(h, ev("padding-padding", i));
+      const durable = m.objects.get(key)!;
+      expect(durable.toString("utf8")).toContain(`run log truncated at ${maxBytes} bytes`);
+      // The marker counts against the cap too: "slightly over" is still over a cap the spec
+      // calls strict.
+      expect(durable.length, `maxBytes=${maxBytes} must not be exceeded`).toBeLessThanOrEqual(maxBytes);
+      expect((await s2.finalize(h)).bytes).toBeLessThanOrEqual(maxBytes);
+    }
   });
 
   it("finalize reports the byte count and a sha256 over the whole log", async () => {
