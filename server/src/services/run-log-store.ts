@@ -2,13 +2,34 @@ import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { notFound } from "../errors.js";
+import { loadConfig } from "../config.js";
+import { createStorageProviderFromConfig } from "../storage/provider-registry.js";
+import { createS3StorageProvider } from "../storage/s3-provider.js";
+import type { StorageProvider } from "../storage/types.js";
 import { resolveValadrienOsInstanceRoot } from "../home-paths.js";
 
-export type RunLogStoreType = "local_file";
+export type RunLogStoreType = "local_file" | "object_store";
 
 export interface RunLogHandle {
   store: RunLogStoreType;
   logRef: string;
+}
+
+/**
+ * Per-run total cap for object-store run logs. `doc/spec/agent-runs.md` requires strict caps on
+ * non-file run-log backends; without one a stuck or noisy adapter can write unboundedly. Past the
+ * cap we stop accepting output and append a single truncation marker.
+ */
+export const OBJECT_STORE_RUN_LOG_MAX_BYTES = 4 * 1024 * 1024;
+/** Flush thresholds: bytes buffered, or age of the oldest unflushed byte. */
+const OBJECT_STORE_FLUSH_BYTES = 256 * 1024;
+const OBJECT_STORE_FLUSH_MS = 1_000;
+/** Consecutive flush failures after which a run stops retrying and frees its buffer. */
+const MAX_FLUSH_RETRIES = 5;
+
+/** True when a persisted `runs.log_store` value names a backend this process can read. */
+export function isRunLogStoreType(value: string | null | undefined): value is RunLogStoreType {
+  return value === "local_file" || value === "object_store";
 }
 
 export interface RunLogReadOptions {
@@ -151,11 +172,440 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
   };
 }
 
+export interface ObjectStoreRunLogOptions {
+  /** Per-run byte cap. Defaults to OBJECT_STORE_RUN_LOG_MAX_BYTES. */
+  maxBytes?: number;
+  /** Flush once this many bytes are buffered. */
+  flushBytes?: number;
+  /** Flush this long after the first unflushed byte, even if the run has gone quiet (ms). */
+  flushMs?: number;
+}
+
+/**
+ * Object-store run logs. Per `doc/spec/agent-runs.md` this is the cloud/serverless default: the
+ * Railway worker writes to the shared object store and the Vercel control plane reads it back,
+ * which is what the old local-file logs could not do across the two filesystems.
+ *
+ * ONE OBJECT PER RUN, rewritten on flush. An earlier revision split runs into numbered segments
+ * plus a manifest to make writes O(new bytes); that bought efficiency at the cost of segment
+ * numbering, manifest adoption, dirty-manifest retries and missing-manifest semantics — six
+ * interacting pieces of state that produced a data-corruption bug at every review round. The cap
+ * is 4MB precisely so whole-object rewrites stay affordable: at a 256KB flush threshold a run that
+ * fills the cap re-uploads ~34MB total, which is a bounded, boring cost in exchange for deleting
+ * that entire class of failure.
+ *
+ * The remaining state is deliberately small: buffered chunks, a mirror of what is durable, and a
+ * serial flush chain. Because the whole log is held in memory to rewrite it, `bytes` and `sha256`
+ * are derived from that mirror at finalize rather than accumulated incrementally.
+ */
+export function createObjectStoreRunLogStore(
+  provider: StorageProvider,
+  options: ObjectStoreRunLogOptions = {},
+): RunLogStore {
+  const maxBytes = options.maxBytes ?? OBJECT_STORE_RUN_LOG_MAX_BYTES;
+  const flushBytes = options.flushBytes ?? OBJECT_STORE_FLUSH_BYTES;
+  const flushMs = options.flushMs ?? OBJECT_STORE_FLUSH_MS;
+  // The truncation marker counts against the cap too. Reserve room for it up front so the marker
+  // can never push the durable object, the mirror or the reported byte count past maxBytes — the
+  // spec calls for a STRICT per-run cap, and "slightly over" is still over.
+  const truncationMarker = (ts: string) =>
+    Buffer.from(`${JSON.stringify({
+      ts, stream: "system", chunk: `[run log truncated at ${maxBytes} bytes]`,
+    })}\n`, "utf8");
+  // ISO-8601 timestamps are fixed width, so the marker's size does not vary by run.
+  const MARKER_BYTES = truncationMarker(new Date(0).toISOString()).length;
+  const contentCap = Math.max(0, maxBytes - MARKER_BYTES);
+
+  type Pending = {
+    /** Buffered, not yet durable. */
+    chunks: Buffer[];
+    buffered: number;
+    /** Bytes detached into an in-flight flush: no longer in `buffered`, not yet in `flushed`. */
+    inFlight: number;
+    /** Consecutive failed flushes; bounds the retry timer so an outage cannot storm forever. */
+    failures: number;
+    /** Set once retries are exhausted: the run is permanently incomplete and must stay that way. */
+    failedPermanently: boolean;
+    /** Mirror of the object as last written. The whole log, because we rewrite it wholesale. */
+    flushed: Buffer;
+    /** Whether `flushed` is known to match durable state (true for a run this process began). */
+    adopted: boolean;
+    truncated: boolean;
+    timer: NodeJS.Timeout | null;
+    /** Last flush failure; finalize rethrows so a short log is never reported as complete. */
+    lastError: unknown;
+    /** Serialises uploads: a flush must never overlap another flush on the same run. */
+    chain: Promise<void>;
+  };
+
+  const pending = new Map<string, Pending>();
+  /**
+   * Completed summaries. heartbeat.ts finalizes the same handle twice when a run fails after its
+   * normal finalize (success path :12972, then the error path :13244); a second call must repeat
+   * the summary rather than report an empty log over correct metadata.
+   */
+  const finalized = new Map<string, RunLogFinalizeSummary>();
+  const FINALIZED_CACHE_MAX = 256;
+
+  function remember(logRef: string, summary: RunLogFinalizeSummary) {
+    if (finalized.size >= FINALIZED_CACHE_MAX) {
+      const oldest = finalized.keys().next().value;
+      if (oldest !== undefined) finalized.delete(oldest);
+    }
+    finalized.set(logRef, summary);
+  }
+
+  function state(logRef: string): Pending {
+    let p = pending.get(logRef);
+    if (!p) {
+      p = {
+        chunks: [], buffered: 0, inFlight: 0, failures: 0, failedPermanently: false,
+        flushed: Buffer.alloc(0), adopted: false,
+        truncated: false, timer: null, lastError: null, chain: Promise.resolve(),
+      };
+      pending.set(logRef, p);
+    }
+    return p;
+  }
+
+  async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
+    const parts: Buffer[] = [];
+    for await (const c of stream) parts.push(Buffer.isBuffer(c) ? c : Buffer.from(c as string));
+    return Buffer.concat(parts);
+  }
+
+  async function put(logRef: string, body: Buffer) {
+    await provider.putObject({
+      objectKey: logRef, body, contentType: "application/x-ndjson", contentLength: body.length,
+    });
+  }
+
+  /**
+   * A run this process began is `adopted` from the start (begin() writes the object, so durable
+   * content is known-empty). Any state needing adoption was therefore RECREATED for a run we did
+   * not begin — a delayed adapter callback for a run that has aged out of the summary cache, say.
+   * Such a state must never write: the run is finished and its logBytes/logSha256 are already
+   * persisted, so appending would make the durable transcript and the database disagree forever.
+   *
+   * Refusing is strictly simpler and safer than reading the object back and appending to it, and
+   * it seals completed runs INDEPENDENTLY of the bounded summary cache — eviction can no longer
+   * reopen a sealed run.
+   */
+  function assertWritable(logRef: string, p: Pending) {
+    if (!p.adopted) throw notFound("Run log is sealed");
+    // The mirror was released when the run was tombstoned; writing now would replace the partial
+    // transcript that IS durable with only whatever arrived afterwards.
+    if (p.failedPermanently) throw notFound("Run log permanently failed");
+  }
+
+  /** Enqueue a flush on the run's serial chain and wait for it. */
+  function flush(logRef: string): Promise<void> {
+    const p = state(logRef);
+    const next = p.chain.then(async () => {
+      // Detach the snapshot BEFORE awaiting so an append landing mid-upload accumulates into the
+      // next flush instead of being cleared by this one.
+      const snapshot = p.chunks;
+      const snapshotBytes = p.buffered;
+      if (snapshot.length === 0) return;
+      p.chunks = [];
+      p.buffered = 0;
+      // Accounted as in-flight until it lands, so the cap check cannot admit another chunk on the
+      // strength of bytes that are neither buffered nor durable yet.
+      p.inFlight = snapshotBytes;
+      if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+
+      try {
+        assertWritable(logRef, p);
+        const body = Buffer.concat([p.flushed, ...snapshot]);
+        await put(logRef, body);
+        p.flushed = body;
+        p.inFlight = 0;
+        p.failures = 0;
+        if (!p.failedPermanently) p.lastError = null;
+      } catch (error) {
+        // Put the bytes back at the FRONT so ordering holds and the next flush (or finalize)
+        // retries them. Dropping them would let finalize report a byte count covering data that
+        // never reached storage.
+        p.chunks = [...snapshot, ...p.chunks];
+        p.buffered += snapshotBytes;
+        p.inFlight = 0;
+        p.lastError = error;
+        p.failures += 1;
+        // The flush cleared the timer on its way in. Re-arm so a quiet run whose timed flush
+        // failed still reaches storage — but BOUND it: an outage that never recovers would
+        // otherwise hold every failed run's buffer in memory and fire a PUT every interval for the
+        // life of the process. After the bound we stop retrying, drop the unwritable bytes, and
+        // keep lastError so finalize still reports the failure rather than a short log.
+        if (p.failures < MAX_FLUSH_RETRIES) armTimer(logRef);
+        else {
+          // Terminal. Dropping the unwritable bytes frees memory, but the run must also stop
+          // accepting output and stop being able to look successful: otherwise storage recovering
+          // mid-run would let later chunks upload, clear lastError, and have finalize report a
+          // clean byte count and hash for a transcript that is missing everything before it.
+          // Compact to a tombstone. Clearing only chunks/buffered still pinned the whole-object
+          // mirror — up to the 4MB cap — for the life of the process, and nothing ever deletes the
+          // pending entry, so a sustained outage could still exhaust worker memory even with
+          // retries stopped. What survives is just the flags and lastError, which is all the run
+          // can still legitimately report.
+          p.failedPermanently = true;
+          p.chunks = [];
+          p.buffered = 0;
+          p.flushed = Buffer.alloc(0);
+        }
+        throw error;
+      }
+    });
+    // Keep the chain usable after a failure, and never leave a rejection unobserved.
+    p.chain = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
+  /**
+   * Flush without propagating a transient failure to the caller. flush() has already requeued the
+   * snapshot, recorded lastError and armed a retry, so rethrowing here would reject append() for a
+   * failure the pipeline is already handling — aborting awaited adapter logging, and producing an
+   * unhandled rejection in the fire-and-forget callbacks that never attach a handler. finalize()
+   * remains the place a failure is reported.
+   */
+  async function flushQuietly(logRef: string) {
+    await flush(logRef).catch(() => undefined);
+  }
+
+  function armTimer(logRef: string) {
+    const p = state(logRef);
+    if (p.timer) return;
+    // A run that emits a little then goes quiet must still reach durable storage. Checking elapsed
+    // time only on the NEXT append left such a run in process memory until finalize — and lost it
+    // entirely if the worker hung or exited, which is the data loss this store exists to remove.
+    // The rejection is recorded on lastError and retried; swallow it here so a timer cannot raise
+    // an unhandled rejection.
+    p.timer = setTimeout(() => { void flush(logRef).catch(() => undefined); }, flushMs);
+    p.timer.unref?.();
+  }
+
+  return {
+    async begin(input) {
+      const [companyId, agentId] = safeSegments(input.companyId, input.agentId);
+      const runId = safeSegments(input.runId)[0]!;
+      // Keys must be company-prefixed to satisfy the storage layer's tenant scoping.
+      const logRef = `${companyId}/run-logs/${agentId}/${runId}.ndjson`;
+      pending.delete(logRef);
+      finalized.delete(logRef);
+      // Write the object up front so a run that produces no output reads back as an empty
+      // transcript, and so a LATER missing object is unambiguously a fault rather than "no output".
+      await put(logRef, Buffer.alloc(0));
+      const p = state(logRef);
+      p.adopted = true; // we just wrote it; durable content is known-empty
+      return { store: "object_store", logRef };
+    },
+
+    async append(handle, event) {
+      if (handle.store !== "object_store") return 0;
+      // A finalized run is sealed. Recreating state here and rewriting would replace a completed
+      // transcript with just the late chunk. Late callbacks (an adapter's unawaited socket-error
+      // logger firing as the socket closes) are dropped rather than thrown, because throwing into
+      // a fire-and-forget callback surfaces as an unhandled rejection in the worker.
+      if (finalized.has(handle.logRef)) return 0;
+      const p = state(handle.logRef);
+      // Sealed the same way, but INDEPENDENTLY of that bounded cache: a state we did not begin()
+      // belongs to a finished run whose logBytes/logSha256 are already persisted. Dropped at the
+      // append boundary rather than thrown, for the same reason — these callbacks are unawaited.
+      if (!p.adopted) return 0;
+      if (p.failedPermanently) return 0;
+      if (p.truncated) return 0;
+
+      const line = JSON.stringify({
+        ts: event.ts,
+        stream: event.stream,
+        chunk: event.chunk,
+        // Monotonic per-run sequence. The transcript UI dedupes and orders the websocket and
+        // poller delivery paths on this; dropping it makes streamed tokens render twice.
+        ...(typeof event.seq === "number" && Number.isFinite(event.seq) ? { seq: event.seq } : {}),
+      });
+      const persisted = Buffer.from(`${line}\n`, "utf8");
+      const current = p.flushed.length + p.buffered + p.inFlight;
+
+      if (current + persisted.length > contentCap) {
+        p.truncated = true;
+        const marker = truncationMarker(event.ts);
+        p.chunks.push(marker);
+        p.buffered += marker.length;
+        await flushQuietly(handle.logRef);
+        return 0;
+      }
+
+      p.chunks.push(persisted);
+      p.buffered += persisted.length;
+      if (p.buffered >= flushBytes) await flushQuietly(handle.logRef);
+      else armTimer(handle.logRef);
+      return persisted.length;
+    },
+
+    async finalize(handle) {
+      if (handle.store !== "object_store") return { bytes: 0, compressed: false };
+      const cached = finalized.get(handle.logRef);
+      if (cached) return cached;
+      const p = state(handle.logRef);
+      if (!p.adopted) {
+        // State was recreated for a run this process did not begin — a re-finalize whose summary
+        // has aged out of the bounded cache. Summarising the empty in-memory state would persist
+        // zero bytes and the hash of "" over correct metadata, so recover from the object itself.
+        const recovered = await provider.getObject({ objectKey: handle.logRef });
+        const body = await drain(recovered.stream);
+        const summary: RunLogFinalizeSummary = {
+          bytes: body.length,
+          sha256: createHash("sha256").update(body).digest("hex"),
+          compressed: false,
+        };
+        remember(handle.logRef, summary);
+        pending.delete(handle.logRef);
+        return summary;
+      }
+      if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+
+      // Settle, don't single-flush. Two orderings must both be handled: a flush ALREADY in flight
+      // when finalize starts (its snapshot is detached, so p.chunks is empty and a chunks-only
+      // loop would skip it and summarise stale p.flushed), and an append arriving DURING
+      // finalize's own flush. Awaiting the chain first covers the former; re-checking covers the
+      // latter.
+      for (let guard = 0; ; guard += 1) {
+        if (guard > 32) throw new Error(`Run log did not settle for ${handle.logRef}`);
+        await p.chain;
+        if (p.chunks.length === 0 || p.failedPermanently) break;
+        // Consume the retry budget here rather than rejecting on the first failure. A raw flush()
+        // rejected finalize() on a single transient PUT, and in the heartbeat success path that
+        // rejection escapes into the catch at heartbeat.ts:13239 and marks the run FAILED even
+        // though the adapter succeeded — a storage blip rewriting the run's outcome.
+        await flushQuietly(handle.logRef);
+      }
+      // Only report failure once the budget is genuinely exhausted; a flush that later succeeded
+      // clears lastError.
+      if (p.lastError) throw p.lastError;
+
+      const summary: RunLogFinalizeSummary = {
+        bytes: p.flushed.length,
+        sha256: createHash("sha256").update(p.flushed).digest("hex"),
+        compressed: false,
+      };
+      remember(handle.logRef, summary);
+      pending.delete(handle.logRef);
+      return summary;
+    },
+
+    async read(handle, opts) {
+      if (handle.store !== "object_store") throw notFound("Run log not found");
+      const offset = Math.max(0, opts?.offset ?? 0);
+      const limitBytes = opts?.limitBytes ?? 256_000;
+      // headObject is O(1) — no scan, and no full transfer just to learn the size.
+      const head = await provider.headObject({ objectKey: handle.logRef });
+      // begin() always writes the object, so a missing one is a fault, not "no output". Reporting
+      // it as an empty transcript would recreate the silent-empty failure this store removes.
+      if (!head.exists) throw notFound("Run log not found");
+      const total = head.contentLength ?? 0;
+      // nextOffset MUST be undefined at/after the end, matching the local_file store: paging
+      // callers (readFullRunLog) loop until it is null, so a number here spins forever on an empty
+      // log — exactly what a run with no output produces.
+      if (offset >= total) return { content: "", nextOffset: undefined };
+
+      const end = Math.min(offset + limitBytes, total);
+      // Over-fetch up to 3 bytes so a page boundary inside a multibyte character can advance to the
+      // next code point. Decoding a split character independently emits U+FFFD on both sides, and
+      // the caller advancing by byte offset never recombines them.
+      // Six, not three: start alignment can consume up to 3 bytes skipping continuation bytes,
+      // and end alignment needs up to 3 more beyond `end`. Sharing one budget left too few bytes
+      // when both boundaries land mid-character (e.g. "😀😀" at offset 1, limitBytes 1).
+      const fetchEnd = Math.min(end + 6, total);
+      const result = await provider.getObject({
+        objectKey: handle.logRef, range: { start: offset, end: fetchEnd - 1 },
+      });
+      const buf = await drain(result.stream);
+      // BOTH boundaries need aligning, not just the end. Paged callers never land mid-character
+      // because we always end on one, but arbitrary offsets do — recovery/service.ts reads a tail
+      // at `logBytes - TAIL_BYTES`, and API/CLI callers may pass anything. Leading continuation
+      // bytes belong to a character whose lead byte precedes `offset`, so they are unreadable here
+      // and are skipped rather than decoded into a leading U+FFFD.
+      let skip = 0;
+      while (skip < buf.length && (buf[skip]! & 0xc0) === 0x80) skip += 1;
+      const body = buf.subarray(skip);
+      const consumed = utf8BoundaryAtOrAfter(body, Math.max(0, end - offset - skip));
+      const advanced = skip + consumed;
+      const nextOffset = offset + advanced < total ? offset + advanced : undefined;
+      return { content: body.subarray(0, consumed).toString("utf8"), nextOffset };
+    },
+  };
+}
+
+function utf8BoundaryAtOrAfter(buf: Buffer, want: number): number {
+  if (buf.length === 0) return 0;
+  let i = Math.max(0, Math.min(want, buf.length));
+  while (i < buf.length && (buf[i]! & 0xc0) === 0x80) i += 1;
+  if (i > 0) return i;
+  // want was 0 AND byte 0 is a lead byte: consume exactly ONE complete character. Returning the
+  // whole buffer here (the previous behaviour) handed back whatever the overfetch happened to
+  // include, which ends mid-character and decodes to a trailing U+FFFD.
+  const lead = buf[0]!;
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  return Math.min(need, buf.length);
+}
+
+/** True when a storage error means "no such object" rather than a transport/permission failure. */
+function isObjectNotFound(error: unknown): boolean {
+  const code = (error as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } } | null);
+  if (!code) return false;
+  if (code.$metadata?.httpStatusCode === 404) return true;
+  return code.name === "NoSuchKey" || code.name === "NotFound" || code.Code === "NoSuchKey";
+}
+
 let cachedStore: RunLogStore | null = null;
 
-export function getRunLogStore() {
+/**
+ * Dispatcher. `doc/spec/agent-runs.md` §6.3: local_file is the dev/local default and object_store
+ * is the cloud/serverless default.
+ *
+ * Crucially, `begin()` picks the backend from configuration but every OTHER operation routes on
+ * the handle's own `store`. An instance that switches to S3 keeps historical `local_file` runs
+ * readable — routing reads by current config would send every pre-existing run to the object-store
+ * reader, which rejects them even though the file is still sitting on disk.
+ */
+export function getRunLogStore(): RunLogStore {
   if (cachedStore) return cachedStore;
+  const config = loadConfig();
   const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolveValadrienOsInstanceRoot(), "data", "run-logs");
-  cachedStore = createLocalFileRunLogStore(basePath);
+  const local = createLocalFileRunLogStore(basePath);
+  // Build the object-store READER whenever S3 settings exist, independently of which backend
+  // begin() selects. Tying the reader to the current provider broke both directions in turn:
+  // switching to S3 stranded local_file runs, and gating it the other way strands object_store
+  // runs the moment an instance switches back to local_disk, even though the objects are still
+  // there. Both readers stay available; only new runs follow the configured provider.
+  const objectProvider = config.storageProvider === "local_disk"
+    ? (config.storageS3Bucket
+        ? createS3StorageProvider({
+            bucket: config.storageS3Bucket,
+            region: config.storageS3Region,
+            endpoint: config.storageS3Endpoint,
+            prefix: config.storageS3Prefix,
+            forcePathStyle: config.storageS3ForcePathStyle,
+          })
+        : null)
+    : createStorageProviderFromConfig(config);
+  const object = objectProvider ? createObjectStoreRunLogStore(objectProvider) : null;
+
+  function forHandle(handle: RunLogHandle): RunLogStore {
+    if (handle.store !== "object_store") return local;
+    if (!object) throw notFound("Run log not found");
+    return object;
+  }
+
+  cachedStore = {
+    begin: (input) => (config.storageProvider === "local_disk" ? local : (object ?? local)).begin(input),
+    append: (handle, event) => forHandle(handle).append(handle, event),
+    finalize: (handle) => forHandle(handle).finalize(handle),
+    read: (handle, opts) => forHandle(handle).read(handle, opts),
+  };
   return cachedStore;
+}
+
+/** Test seam: drop the cached store so a test can re-resolve it under different config. */
+export function __resetRunLogStoreForTests() {
+  cachedStore = null;
 }

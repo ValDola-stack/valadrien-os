@@ -45,7 +45,7 @@ import {
 } from "../issue-dependency-wakeups.js";
 import { parseIssueExecutionState } from "../issue-execution-policy.js";
 import { evaluateAgentInvokabilityFromDb } from "../agent-invokability.js";
-import { getRunLogStore } from "../run-log-store.js";
+import { getRunLogStore, type RunLogStoreType } from "../run-log-store.js";
 import {
   DEFAULT_MAX_SUCCESSFUL_RUN_HANDOFF_ATTEMPTS,
   FINISH_SUCCESSFUL_RUN_HANDOFF_REASON,
@@ -1216,7 +1216,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     try {
       const offset = Math.max(0, run.logBytes - ACTIVE_RUN_OUTPUT_EVIDENCE_TAIL_BYTES);
       const result = await runLogStore.read(
-        { store: run.logStore as "local_file", logRef: run.logRef },
+        { store: run.logStore as RunLogStoreType, logRef: run.logRef },
         { offset, limitBytes: ACTIVE_RUN_OUTPUT_EVIDENCE_TAIL_BYTES },
       );
       return result.content;
