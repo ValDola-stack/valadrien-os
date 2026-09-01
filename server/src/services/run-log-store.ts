@@ -20,9 +20,9 @@ export interface RunLogHandle {
  * non-file run-log backends; without one a stuck or noisy adapter can write unboundedly. Past the
  * cap we stop accepting output and append a single truncation marker.
  */
-export const OBJECT_STORE_RUN_LOG_MAX_BYTES = 32 * 1024 * 1024;
+export const OBJECT_STORE_RUN_LOG_MAX_BYTES = 4 * 1024 * 1024;
 /** Flush thresholds: bytes buffered, or age of the oldest unflushed byte. */
-const OBJECT_STORE_FLUSH_BYTES = 64 * 1024;
+const OBJECT_STORE_FLUSH_BYTES = 256 * 1024;
 const OBJECT_STORE_FLUSH_MS = 1_000;
 
 /** True when a persisted `runs.log_store` value names a backend this process can read. */
@@ -184,17 +184,17 @@ export interface ObjectStoreRunLogOptions {
  * Railway worker writes to the shared object store and the Vercel control plane reads it back,
  * which is what the old local-file logs could not do across the two filesystems.
  *
- * Object stores cannot append, so a run is stored as IMMUTABLE SEGMENTS plus a small manifest:
+ * ONE OBJECT PER RUN, rewritten on flush. An earlier revision split runs into numbered segments
+ * plus a manifest to make writes O(new bytes); that bought efficiency at the cost of segment
+ * numbering, manifest adoption, dirty-manifest retries and missing-manifest semantics — six
+ * interacting pieces of state that produced a data-corruption bug at every review round. The cap
+ * is 4MB precisely so whole-object rewrites stay affordable: at a 256KB flush threshold a run that
+ * fills the cap re-uploads ~34MB total, which is a bounded, boring cost in exchange for deleting
+ * that entire class of failure.
  *
- *   <prefix>/index.json      { segments: [{ key, bytes }], truncated }
- *   <prefix>/00001.ndjson    one flush worth of complete NDJSON lines
- *   <prefix>/00002.ndjson    ...
- *
- * Each flush uploads only the newly buffered bytes and rewrites the (tiny) manifest, so write
- * traffic is O(bytes emitted) rather than O(bytes²) — replacing one growing blob meant a run at
- * the 32MB cap re-uploaded roughly 8GiB across ~512 PUTs, each awaited by the adapter's output
- * pump. Reads consult the manifest for sizes (no scan) and issue ranged GETs against only the
- * segments overlapping the requested window.
+ * The remaining state is deliberately small: buffered chunks, a mirror of what is durable, and a
+ * serial flush chain. Because the whole log is held in memory to rewrite it, `bytes` and `sha256`
+ * are derived from that mirror at finalize rather than accumulated incrementally.
  */
 export function createObjectStoreRunLogStore(
   provider: StorageProvider,
@@ -204,30 +204,27 @@ export function createObjectStoreRunLogStore(
   const flushBytes = options.flushBytes ?? OBJECT_STORE_FLUSH_BYTES;
   const flushMs = options.flushMs ?? OBJECT_STORE_FLUSH_MS;
 
-  type Segment = { key: string; bytes: number };
-  type Manifest = { segments: Segment[]; truncated: boolean };
   type Pending = {
+    /** Buffered, not yet durable. */
     chunks: Buffer[];
     buffered: number;
-    manifest: Manifest;
-    hash: ReturnType<typeof createHash>;
-    total: number;
+    /** Mirror of the object as last written. The whole log, because we rewrite it wholesale. */
+    flushed: Buffer;
+    /** Whether `flushed` is known to match durable state (true for a run this process began). */
+    adopted: boolean;
     truncated: boolean;
     timer: NodeJS.Timeout | null;
-    /** Last flush failure, surfaced by finalize() so a short transcript is never reported clean. */
+    /** Last flush failure; finalize rethrows so a short log is never reported as complete. */
     lastError: unknown;
-    /** Segment landed but its manifest write failed; the manifest must be retried on its own. */
-    manifestDirty: boolean;
-    /** Whether the durable manifest has been reconciled into this in-memory state. */
-    adopted: boolean;
     /** Serialises uploads: a flush must never overlap another flush on the same run. */
     chain: Promise<void>;
   };
+
   const pending = new Map<string, Pending>();
   /**
    * Completed summaries. heartbeat.ts finalizes the same handle twice when a run fails after its
-   * normal finalize (normal path, then the error path), and a second call must not report an
-   * empty log — that would persist zero bytes and the hash of "" over correct metadata.
+   * normal finalize (success path :12972, then the error path :13244); a second call must repeat
+   * the summary rather than report an empty log over correct metadata.
    */
   const finalized = new Map<string, RunLogFinalizeSummary>();
   const FINALIZED_CACHE_MAX = 256;
@@ -236,20 +233,12 @@ export function createObjectStoreRunLogStore(
     let p = pending.get(logRef);
     if (!p) {
       p = {
-        chunks: [], buffered: 0, manifest: { segments: [], truncated: false },
-        hash: createHash("sha256"), total: 0, truncated: false, timer: null, lastError: null, manifestDirty: false, adopted: false,
-        chain: Promise.resolve(),
+        chunks: [], buffered: 0, flushed: Buffer.alloc(0), adopted: false,
+        truncated: false, timer: null, lastError: null, chain: Promise.resolve(),
       };
       pending.set(logRef, p);
     }
     return p;
-  }
-
-  const manifestKey = (logRef: string) => `${logRef}/index.json`;
-
-  async function putManifest(logRef: string, manifest: Manifest) {
-    const body = Buffer.from(JSON.stringify(manifest), "utf8");
-    await provider.putObject({ objectKey: manifestKey(logRef), body, contentType: "application/json", contentLength: body.length });
   }
 
   async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
@@ -258,96 +247,64 @@ export function createObjectStoreRunLogStore(
     return Buffer.concat(parts);
   }
 
-  async function getManifest(logRef: string): Promise<Manifest> {
+  async function put(logRef: string, body: Buffer) {
+    await provider.putObject({
+      objectKey: logRef, body, contentType: "application/x-ndjson", contentLength: body.length,
+    });
+  }
+
+  /**
+   * Reconcile `flushed` against durable state. Only needed when in-memory state was RECREATED for
+   * a run whose object already exists — a late append for a run that has aged out of the finalized
+   * cache, say. Without this, the rewrite would replace a complete transcript with just the late
+   * chunk. A run this process began is already adopted, so the common path costs nothing.
+   */
+  async function adopt(logRef: string, p: Pending) {
+    if (p.adopted) return;
     let result;
     try {
-      result = await provider.getObject({ objectKey: manifestKey(logRef) });
+      result = await provider.getObject({ objectKey: logRef });
     } catch (error) {
-      // begin() writes an empty manifest for EVERY object-store run before the handle is
-      // persisted, so a run that emitted nothing still has one. A missing manifest therefore means
-      // the object was deleted or the bucket/prefix is misconfigured — a real fault. Treating it
-      // as "no output" would reproduce the silent-empty failure mode this store exists to remove.
+      // begin() writes the object before the handle is persisted, so a missing object means it was
+      // deleted or the bucket/prefix is wrong — a real fault. Proceeding on ANY error would let a
+      // transient timeout overwrite a good transcript with an empty one.
       if (isObjectNotFound(error)) throw notFound("Run log not found");
       throw error;
     }
-    try {
-      return JSON.parse((await drain(result.stream)).toString("utf8")) as Manifest;
-    } catch {
-      throw new Error(`Run log manifest is unreadable for ${logRef}`);
-    }
+    p.flushed = await drain(result.stream);
+    p.adopted = true;
   }
 
   /** Enqueue a flush on the run's serial chain and wait for it. */
   function flush(logRef: string): Promise<void> {
     const p = state(logRef);
     const next = p.chain.then(async () => {
-      // Detach the exact snapshot being uploaded BEFORE awaiting, so an append that lands during
-      // the upload accumulates into the next flush instead of being cleared by this one.
+      // Detach the snapshot BEFORE awaiting so an append landing mid-upload accumulates into the
+      // next flush instead of being cleared by this one.
       const snapshot = p.chunks;
       const snapshotBytes = p.buffered;
-      if (snapshot.length === 0) {
-        // Nothing new to upload, but a previous flush may have landed its segment and then failed
-        // to write the manifest. Returning early there left the manifest permanently behind and
-        // finalize() rethrowing a stale error turned an otherwise successful quiet run into a
-        // failed one.
-        if (p.manifestDirty) {
-          await putManifest(logRef, p.manifest);
-          p.manifestDirty = false;
-          p.lastError = null;
-        }
-        return;
-      }
+      if (snapshot.length === 0) return;
       p.chunks = [];
       p.buffered = 0;
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
 
-      // Never assume this flush is writing the FIRST segment. In-memory state can be recreated for
-      // a run whose durable log already exists — a late append after its entry aged out of the
-      // finalized cache, for instance — and numbering from an empty manifest would write
-      // 00001.ndjson straight over the original first segment and replace index.json with a
-      // manifest listing only the new chunk, destroying a completed transcript. Reconcile against
-      // durable state once per run before numbering anything.
-      if (!p.adopted) {
-        p.adopted = true;
-        const durable = await getManifest(logRef).catch(() => null);
-        if (durable && durable.segments.length > 0) {
-          p.manifest = durable;
-          p.truncated = p.truncated || durable.truncated;
-          p.total += durable.segments.reduce((n, seg) => n + seg.bytes, 0);
-        }
-      }
-
-      const body = Buffer.concat(snapshot);
-      const key = `${logRef}/${String(p.manifest.segments.length + 1).padStart(5, "0")}.ndjson`;
       try {
-        await provider.putObject({ objectKey: key, body, contentType: "application/x-ndjson", contentLength: body.length });
+        await adopt(logRef, p);
+        const body = Buffer.concat([p.flushed, ...snapshot]);
+        await put(logRef, body);
+        p.flushed = body;
+        p.lastError = null;
       } catch (error) {
-        // The segment never landed. Put the bytes back at the FRONT so ordering holds and the next
-        // flush (or finalize) retries them — dropping them would let finalize report a byte count
-        // and sha256 covering data that is not in the manifest, i.e. a silently short transcript.
+        // Put the bytes back at the FRONT so ordering holds and the next flush (or finalize)
+        // retries them. Dropping them would let finalize report a byte count covering data that
+        // never reached storage.
         p.chunks = [...snapshot, ...p.chunks];
         p.buffered += snapshotBytes;
         p.lastError = error;
         throw error;
       }
-      // Segment first, then manifest: a crash between the two leaves an unreferenced segment
-      // (harmless) rather than a manifest pointing at an object that does not exist.
-      p.manifest.segments.push({ key, bytes: body.length });
-      p.manifest.truncated = p.truncated;
-      p.manifestDirty = true;
-      try {
-        await putManifest(logRef, p.manifest);
-        p.manifestDirty = false;
-      } catch (error) {
-        // The bytes ARE durable in the segment; only the manifest write failed. Do not requeue
-        // (that would upload the same bytes again as a second segment). The in-memory manifest
-        // already lists this segment, so the next flush's manifest write is self-healing.
-        p.lastError = error;
-        throw error;
-      }
-      p.lastError = null;
     });
-    // Keep the chain usable after a failure, but never let a rejection go unobserved.
+    // Keep the chain usable after a failure, and never leave a rejection unobserved.
     p.chain = next.then(() => undefined, () => undefined);
     return next;
   }
@@ -355,12 +312,11 @@ export function createObjectStoreRunLogStore(
   function armTimer(logRef: string) {
     const p = state(logRef);
     if (p.timer) return;
-    // A run that emits a little and then goes quiet must still reach durable storage. Checking the
-    // age only on the NEXT append meant such a run stayed in process memory until finalize — and
-    // vanished entirely if the worker hung or exited, which is the data-loss case this store exists
-    // to remove.
-    // A rejected timer flush is recorded on p.lastError and retried; swallow here so it
-    // cannot surface as an unhandled rejection.
+    // A run that emits a little then goes quiet must still reach durable storage. Checking elapsed
+    // time only on the NEXT append left such a run in process memory until finalize — and lost it
+    // entirely if the worker hung or exited, which is the data loss this store exists to remove.
+    // The rejection is recorded on lastError and retried; swallow it here so a timer cannot raise
+    // an unhandled rejection.
     p.timer = setTimeout(() => { void flush(logRef).catch(() => undefined); }, flushMs);
     p.timer.unref?.();
   }
@@ -370,22 +326,23 @@ export function createObjectStoreRunLogStore(
       const [companyId, agentId] = safeSegments(input.companyId, input.agentId);
       const runId = safeSegments(input.runId)[0]!;
       // Keys must be company-prefixed to satisfy the storage layer's tenant scoping.
-      const logRef = `${companyId}/run-logs/${agentId}/${runId}`;
+      const logRef = `${companyId}/run-logs/${agentId}/${runId}.ndjson`;
       pending.delete(logRef);
-      // Write an empty manifest up front so a run that produces no output reads back as an empty
-      // transcript rather than being indistinguishable from a storage failure.
-      await putManifest(logRef, { segments: [], truncated: false });
+      finalized.delete(logRef);
+      // Write the object up front so a run that produces no output reads back as an empty
+      // transcript, and so a LATER missing object is unambiguously a fault rather than "no output".
+      await put(logRef, Buffer.alloc(0));
+      const p = state(logRef);
+      p.adopted = true; // we just wrote it; durable content is known-empty
       return { store: "object_store", logRef };
     },
 
     async append(handle, event) {
       if (handle.store !== "object_store") return 0;
-      // A finalized run is sealed. Recreating pending state here would start a fresh manifest,
-      // so the next flush would write 00001.ndjson OVER the original first segment and replace
-      // index.json with a manifest listing only the late chunk — destroying a completed
-      // transcript. Late callbacks (e.g. an adapter's unawaited socket-error logger firing as the
-      // socket closes) are dropped rather than thrown, because throwing into a fire-and-forget
-      // callback surfaces as an unhandled rejection in the worker.
+      // A finalized run is sealed. Recreating state here and rewriting would replace a completed
+      // transcript with just the late chunk. Late callbacks (an adapter's unawaited socket-error
+      // logger firing as the socket closes) are dropped rather than thrown, because throwing into
+      // a fire-and-forget callback surfaces as an unhandled rejection in the worker.
       if (finalized.has(handle.logRef)) return 0;
       const p = state(handle.logRef);
       if (p.truncated) return 0;
@@ -399,8 +356,9 @@ export function createObjectStoreRunLogStore(
         ...(typeof event.seq === "number" && Number.isFinite(event.seq) ? { seq: event.seq } : {}),
       });
       const persisted = Buffer.from(`${line}\n`, "utf8");
+      const current = p.flushed.length + p.buffered;
 
-      if (p.total + persisted.length > maxBytes) {
+      if (current + persisted.length > maxBytes) {
         p.truncated = true;
         const marker = Buffer.from(`${JSON.stringify({
           ts: event.ts, stream: "system",
@@ -408,16 +366,12 @@ export function createObjectStoreRunLogStore(
         })}\n`, "utf8");
         p.chunks.push(marker);
         p.buffered += marker.length;
-        p.total += marker.length;
-        p.hash.update(marker);
         await flush(handle.logRef);
         return 0;
       }
 
       p.chunks.push(persisted);
       p.buffered += persisted.length;
-      p.total += persisted.length;
-      p.hash.update(persisted);
       if (p.buffered >= flushBytes) await flush(handle.logRef);
       else armTimer(handle.logRef);
       return persisted.length;
@@ -429,9 +383,20 @@ export function createObjectStoreRunLogStore(
       if (cached) return cached;
       const p = state(handle.logRef);
       if (p.timer) { clearTimeout(p.timer); p.timer = null; }
-      await flush(handle.logRef);
+
+      // Drain, don't single-flush: an append arriving while finalize's own flush is uploading
+      // lands in p.chunks, and returning here would seal a log missing those bytes.
+      for (let guard = 0; p.chunks.length > 0; guard += 1) {
+        if (guard > 32) throw new Error(`Run log did not settle for ${handle.logRef}`);
+        await flush(handle.logRef);
+      }
       if (p.lastError) throw p.lastError;
-      const summary = { bytes: p.total, sha256: p.hash.copy().digest("hex"), compressed: false };
+
+      const summary: RunLogFinalizeSummary = {
+        bytes: p.flushed.length,
+        sha256: createHash("sha256").update(p.flushed).digest("hex"),
+        compressed: false,
+      };
       if (finalized.size >= FINALIZED_CACHE_MAX) {
         const oldest = finalized.keys().next().value;
         if (oldest !== undefined) finalized.delete(oldest);
@@ -445,33 +410,26 @@ export function createObjectStoreRunLogStore(
       if (handle.store !== "object_store") throw notFound("Run log not found");
       const offset = Math.max(0, opts?.offset ?? 0);
       const limitBytes = opts?.limitBytes ?? 256_000;
-      const manifest = await getManifest(handle.logRef);
-      const segments = manifest.segments;
-      const total = segments.reduce((n, seg) => n + seg.bytes, 0);
+      // headObject is O(1) — no scan, and no full transfer just to learn the size.
+      const head = await provider.headObject({ objectKey: handle.logRef });
+      // begin() always writes the object, so a missing one is a fault, not "no output". Reporting
+      // it as an empty transcript would recreate the silent-empty failure this store removes.
+      if (!head.exists) throw notFound("Run log not found");
+      const total = head.contentLength ?? 0;
       // nextOffset MUST be undefined at/after the end, matching the local_file store: paging
-      // callers (readFullRunLog) loop until it is null, so a number here spins forever on an
-      // empty log — exactly what a run with no output produces.
+      // callers (readFullRunLog) loop until it is null, so a number here spins forever on an empty
+      // log — exactly what a run with no output produces.
       if (offset >= total) return { content: "", nextOffset: undefined };
 
       const end = Math.min(offset + limitBytes, total);
-      // Over-fetch by up to 3 bytes so a page boundary landing inside a multibyte character can be
-      // advanced to the next code-point boundary. Decoding a split character independently would
-      // emit U+FFFD on both sides, and the caller — advancing by byte offset — never recombines
-      // them, permanently corrupting that output.
+      // Over-fetch up to 3 bytes so a page boundary inside a multibyte character can advance to the
+      // next code point. Decoding a split character independently emits U+FFFD on both sides, and
+      // the caller advancing by byte offset never recombines them.
       const fetchEnd = Math.min(end + 3, total);
-      const parts: Buffer[] = [];
-      let cursor = 0;
-      for (const seg of segments) {
-        const segStart = cursor;
-        const segEnd = cursor + seg.bytes;
-        cursor = segEnd;
-        if (segEnd <= offset || segStart >= fetchEnd) continue;
-        const from = Math.max(offset, segStart) - segStart;
-        const to = Math.min(fetchEnd, segEnd) - segStart;
-        const result = await provider.getObject({ objectKey: seg.key, range: { start: from, end: to - 1 } });
-        parts.push(await drain(result.stream));
-      }
-      const buf = Buffer.concat(parts);
+      const result = await provider.getObject({
+        objectKey: handle.logRef, range: { start: offset, end: fetchEnd - 1 },
+      });
+      const buf = await drain(result.stream);
       const consumed = utf8BoundaryAtOrAfter(buf, end - offset);
       const nextOffset = offset + consumed < total ? offset + consumed : undefined;
       return { content: buf.subarray(0, consumed).toString("utf8"), nextOffset };
@@ -479,12 +437,6 @@ export function createObjectStoreRunLogStore(
   };
 }
 
-/**
- * Byte length to consume so a page ends on a complete UTF-8 code point: the smallest boundary at
- * or after `want`. If `want` lands mid-character the bytes there are continuation bytes (10xxxxxx),
- * so walking forward past them reaches the next lead byte. A page may therefore exceed the
- * requested limit by up to 3 bytes, which guarantees forward progress even at limitBytes=1.
- */
 function utf8BoundaryAtOrAfter(buf: Buffer, want: number): number {
   if (want >= buf.length) return buf.length;
   let i = Math.max(0, want);
